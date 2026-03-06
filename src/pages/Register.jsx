@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axiosConfig';
 
 const Orbs = () => (
-  <>
-    <div className="fixed top-0 left-0 w-1/2 h-1/2 bg-accent-purple/20 rounded-full filter blur-[150px] opacity-40 animate-[spin_20s_linear_infinite] -translate-x-1/4 -translate-y-1/4" />
-    <div className="fixed bottom-0 right-0 w-1/2 h-1/2 bg-accent-blue/20 rounded-full filter blur-[150px] opacity-40 animate-[spin_25s_linear_infinite_reverse] translate-x-1/4 translate-y-1/4" />
-  </>
+    <>
+        <div className="fixed top-0 left-0 w-1/2 h-1/2 bg-accent-purple/20 rounded-full filter blur-[150px] opacity-40 animate-[spin_20s_linear_infinite] -translate-x-1/4 -translate-y-1/4" />
+        <div className="fixed bottom-0 right-0 w-1/2 h-1/2 bg-accent-blue/20 rounded-full filter blur-[150px] opacity-40 animate-[spin_25s_linear_infinite_reverse] translate-x-1/4 translate-y-1/4" />
+    </>
 );
 
 const Register = () => {
@@ -64,7 +64,7 @@ const Register = () => {
         }
 
         try {
-            const response = await api.post('auth/register', {
+            await api.post('auth/register', {
                 email: formData.email,
                 username: formData.username,
                 password: formData.password,

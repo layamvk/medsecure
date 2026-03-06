@@ -1,72 +1,77 @@
-import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import AppLayout from './layout/AppLayout';
-import ProtectedRoute from './layout/ProtectedRoute';
-import Dashboard from './pages/Dashboard';
-import AdminPanel from './pages/AdminPanel';
-import Patients from './pages/Patients';
-import PatientDetail from './pages/PatientDetail';
-import PrivacyBudget from './pages/PrivacyBudget';
-import History from './pages/History';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import NurseDashboard from './pages/NurseDashboard';
-import NursePatients from './pages/NursePatients';
-import AdminUsers from './pages/AdminUsers';
-import AdminAudit from './pages/AdminAudit';
-import AdminRisk from './pages/AdminRisk';
-import AdminSettings from './pages/AdminSettings';
-import ReceptionistDashboard from './pages/ReceptionistDashboard';
-import PatientDashboard from './pages/PatientDashboard';
-import PatientRecords from './pages/PatientRecords';
-import PatientTransparency from './pages/PatientTransparency';
-import ReceptionistAppointments from './pages/ReceptionistAppointments';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import { Toaster } from 'react-hot-toast';
 
-function DashboardRedirect() {
-  const { getDashboardPath } = useAuth();
-  return <Navigate to={getDashboardPath()} replace />;
-}
+// Layouts
+import MainLayout from './layouts/MainLayout';
+
+// Pages
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import QueryInbox from './pages/QueryInbox';
+import AIAssistant from './pages/AIAssistant';
+import AppointmentBooking from './pages/AppointmentBooking';
+
+// Deep Patient UI Protocol Routes
+import NewQuery from './pages/patient/NewQuery';
+import QueryHistory from './pages/patient/QueryHistory';
+import QueryDetail from './pages/patient/QueryDetail';
+
+// Hospital Staff Routes
+import StaffQueryInbox from './pages/staff/QueryInbox';
+import StaffQueryDetail from './pages/staff/QueryDetail';
 
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public Routes */}
+          {/* Public Route */}
           <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
 
-          <Route path="/" element={<AppLayout />}>
-            {/* Default Route handles redirection based on role */}
-            <Route index element={<DashboardRedirect />} />
+          {/* Protected Routes (Wrapped in MainLayout with Sidebar) */}
+          <Route element={<MainLayout />}>
+            {/* Default Routing */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-            {/* Doctor Routes */}
-            <Route path="doctor" element={<ProtectedRoute allowedRoles={['Doctor']}><Dashboard /></ProtectedRoute>} />
-            <Route path="doctor/patients" element={<ProtectedRoute allowedRoles={['Doctor']}><Patients /></ProtectedRoute>} />
-            <Route path="doctor/patients/:id" element={<ProtectedRoute allowedRoles={['Doctor']}><PatientDetail /></ProtectedRoute>} />
-            <Route path="doctor/privacy" element={<ProtectedRoute allowedRoles={['Doctor']}><PrivacyBudget /></ProtectedRoute>} />
-            <Route path="doctor/history" element={<ProtectedRoute allowedRoles={['Doctor']}><History /></ProtectedRoute>} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/queries" element={<QueryInbox />} />
+            <Route path="/ai-assistant" element={<AIAssistant />} />
+            <Route path="/appointments" element={<AppointmentBooking />} />
 
-            {/* Admin Routes */}
-            <Route path="admin" element={<ProtectedRoute allowedRoles={['Admin']}><AdminPanel /></ProtectedRoute>} />
-            <Route path="admin/users" element={<ProtectedRoute allowedRoles={['Admin']}><AdminUsers /></ProtectedRoute>} />
-            <Route path="admin/audit" element={<ProtectedRoute allowedRoles={['Admin']}><AdminAudit /></ProtectedRoute>} />
-            <Route path="admin/risk" element={<ProtectedRoute allowedRoles={['Admin']}><AdminRisk /></ProtectedRoute>} />
-            <Route path="admin/settings" element={<ProtectedRoute allowedRoles={['Admin']}><AdminSettings /></ProtectedRoute>} />
+            {/* Phase 3 - Patient Interface Routes */}
+            <Route path="/patient" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/patient/new-query" element={<NewQuery />} />
+            <Route path="/patient/queries" element={<QueryHistory />} />
+            <Route path="/patient/queries/:id" element={<QueryDetail />} />
 
-            {/* Other Role Dashboards */}
-            <Route path="nurse" element={<ProtectedRoute allowedRoles={['Nurse']}><NurseDashboard /></ProtectedRoute>} />
-            <Route path="nurse/patients" element={<ProtectedRoute allowedRoles={['Nurse']}><NursePatients /></ProtectedRoute>} />
-            <Route path="nurse/privacy" element={<ProtectedRoute allowedRoles={['Nurse']}><PrivacyBudget /></ProtectedRoute>} />
-            <Route path="receptionist" element={<ProtectedRoute allowedRoles={['Receptionist']}><ReceptionistDashboard /></ProtectedRoute>} />
-            <Route path="receptionist/appointments" element={<ProtectedRoute allowedRoles={['Receptionist']}><ReceptionistAppointments /></ProtectedRoute>} />
-            <Route path="patient" element={<ProtectedRoute allowedRoles={['Patient']}><PatientDashboard /></ProtectedRoute>} />
-            <Route path="patient/transparency" element={<ProtectedRoute allowedRoles={['Patient']}><PatientTransparency /></ProtectedRoute>} />
-                      <Route path="patient/records" element={<ProtectedRoute allowedRoles={['Patient']}><PatientRecords /></ProtectedRoute>} />
+            {/* Phase 4 - Staff Interface Routes */}
+            <Route path="/staff/queries" element={<StaffQueryInbox />} />
+            <Route path="/staff/queries/:id" element={<StaffQueryDetail />} />
+
+            {/* Role dashboard aliases */}
+            <Route path="/doctor" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/nurse" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/receptionist" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/admin" element={<Navigate to="/dashboard" replace />} />
           </Route>
+
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#1e293b',
+            color: '#f1f5f9',
+            borderRadius: '12px',
+            fontSize: '14px',
+          },
+        }}
+      />
     </AuthProvider>
   );
 }

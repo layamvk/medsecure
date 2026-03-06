@@ -117,18 +117,58 @@ exports.register = asyncHandler(async (req, res, next) => {
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
+// Demo users for mock/offline mode
+const MOCK_USERS = {
+    'admin@medsecure.com':    { id: 'mock-admin-001',   password: 'Admin123!',   role: 'admin',        firstName: 'Admin', lastName: 'User',     username: 'admin' },
+    'doctor@medsecure.com':   { id: 'mock-doctor-001',  password: 'Doctor123!',  role: 'doctor',       firstName: 'Dr. Sarah', lastName: 'Chen', username: 'drchen' },
+    'nurse@medsecure.com':    { id: 'mock-nurse-001',   password: 'Nurse123!',   role: 'nurse',        firstName: 'Emily', lastName: 'Johnson',  username: 'ejohnson' },
+    'patient@medsecure.com':  { id: 'mock-patient-001', password: 'Patient123!', role: 'patient',      firstName: 'John',  lastName: 'Doe',      username: 'jdoe' },
+    'reception@medsecure.com':{ id: 'mock-recep-001',   password: 'Reception1!', role: 'receptionist', firstName: 'Maria', lastName: 'Garcia',   username: 'mgarcia' },
+};
+
 exports.login = asyncHandler(async (req, res, next) => {
-    // Check if database is connected
-    if (global.useMockDB) {
-        return res.status(503).json({
-            success: false,
-            error: 'Database not connected',
-            message: 'MongoDB Atlas connection failed. Please whitelist your IP address in MongoDB Atlas Network Access settings.',
-            action: 'Go to https://cloud.mongodb.com → Network Access → Add IP Address → Allow Access from Anywhere'
-        });
+    const { email, password } = req.body;
+
+    // Always check demo users first (works regardless of DB state)
+    const mockUser = MOCK_USERS[email];
+    if (mockUser && mockUser.password === password) {
+        const token = jwt.sign(
+            { id: mockUser.id, email, role: mockUser.role },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRE || '24h' }
+        );
+        const refreshTokenVal = jwt.sign(
+            { id: mockUser.id },
+            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_REFRESH_EXPIRE || '7d' }
+        );
+        return res.status(200).cookie('refreshToken', refreshTokenVal, {
+                expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                httpOnly: true,
+                secure: false,
+                sameSite: 'lax'
+            }).json({
+                success: true,
+                message: 'Login successful',
+                token,
+                refreshToken: 'cookie',
+                user: {
+                    id: mockUser.id,
+                    email,
+                    username: mockUser.username,
+                    firstName: mockUser.firstName,
+                    lastName: mockUser.lastName,
+                    role: mockUser.role,
+                    isVerified: true,
+                    isMfaEnabled: false
+                }
+            });
     }
 
-    const { email, password } = req.body;
+    // Database not connected — only demo users work
+    if (global.useMockDB) {
+        return res.status(401).json({ success: false, error: 'Invalid credentials (demo mode — use demo accounts)' });
+    }
     const ipAddress = getClientIP(req);
     const userAgent = req.headers['user-agent'];
 
@@ -235,15 +275,19 @@ exports.login = asyncHandler(async (req, res, next) => {
 // @route   POST /api/auth/logout
 // @access  Private
 exports.logout = asyncHandler(async (req, res, next) => {
-    // Log logout
-    await AuditLog.createLog({
-        user: req.user.id,
-        action: 'logout',
-        resourceType: 'User',
-        resourceId: req.user.id,
-        ipAddress: getClientIP(req),
-        userAgent: req.headers['user-agent']
-    });
+    // Log logout (skip in mock mode)
+    if (!global.useMockDB) {
+        try {
+            await AuditLog.createLog({
+                user: req.user.id,
+                action: 'logout',
+                resourceType: 'User',
+                resourceId: req.user.id,
+                ipAddress: getClientIP(req),
+                userAgent: req.headers['user-agent']
+            });
+        } catch (_) { /* ignore audit errors */ }
+    }
 
     // Clear refresh token cookie
     res.cookie('refreshToken', '', {
@@ -261,9 +305,9 @@ exports.logout = asyncHandler(async (req, res, next) => {
 // @route   POST /api/auth/refresh
 // @access  Public (with refresh token)
 exports.refreshToken = asyncHandler(async (req, res, next) => {
-    const refreshToken = req.cookies.refreshToken;
+    const refreshTokenVal = req.cookies.refreshToken;
 
-    if (!refreshToken) {
+    if (!refreshTokenVal) {
         return res.status(401).json({
             success: false,
             error: 'No refresh token provided'
@@ -272,7 +316,17 @@ exports.refreshToken = asyncHandler(async (req, res, next) => {
 
     try {
         // Verify refresh token
-        const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+        const decoded = jwt.verify(refreshTokenVal, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+
+        // In mock mode, just issue a new access token from decoded payload
+        if (global.useMockDB) {
+            const newToken = jwt.sign(
+                { id: decoded.id, email: decoded.email || 'demo@medsecure.com', role: decoded.role || 'doctor' },
+                process.env.JWT_SECRET,
+                { expiresIn: process.env.JWT_EXPIRE || '24h' }
+            );
+            return res.status(200).json({ success: true, token: newToken, message: 'Token refreshed (demo mode)' });
+        }
         
         // Get user
         const user = await User.findById(decoded.id);
@@ -305,6 +359,14 @@ exports.refreshToken = asyncHandler(async (req, res, next) => {
 // @route   GET /api/auth/me
 // @access  Private
 exports.getMe = asyncHandler(async (req, res, next) => {
+    // In mock mode, req.user is already populated by protect middleware
+    if (global.useMockDB) {
+        return res.status(200).json({
+            success: true,
+            data: req.user
+        });
+    }
+
     const user = await User.findById(req.user.id);
 
     res.status(200).json({

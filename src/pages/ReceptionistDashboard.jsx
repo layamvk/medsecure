@@ -1,54 +1,24 @@
-import React from 'react';
+
+import React, { useEffect, useState } from 'react';
 import Card from '../components/Card';
 import { Calendar, Phone, Users, Clock, DollarSign, FileText, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import api from '../api/axiosConfig';
 
-const MOCK_APPOINTMENTS = [
-    { id: '1', time: '14:00', patient: 'Marcus Sterling', doctor: 'Dr. Jenkins', type: 'Consultation', status: 'Confirmed' },
-    { id: '2', time: '14:30', patient: 'Elena Rostova', doctor: 'Dr. Chen', type: 'Follow-up', status: 'Waiting' },
-    { id: '3', time: '15:00', patient: 'James Wilson', doctor: 'Dr. Martinez', type: 'Check-up', status: 'In Progress' },
-    { id: '4', time: '15:30', patient: 'Sarah Connor', doctor: 'Dr. Jenkins', type: 'Emergency', status: 'Critical' },
-];
+const ReceptionistDashboard = () => {
+    const { user } = useAuth();
+    const [appointments, setAppointments] = useState([]);
+    const [waitingPatients, setWaitingPatients] = useState([]);
+    const [calls, setCalls] = useState([]);
+    const [billing, setBilling] = useState([]);
 
-const MOCK_WAITING_PATIENTS = [
-    { id: '1', name: 'Robert Chen', appointmentTime: '13:45', waitTime: '15 min', priority: 'Normal' },
-    { id: '2', name: 'Maria Garcia', appointmentTime: '14:15', waitTime: '8 min', priority: 'Urgent' },
-    { id: '3', name: 'David Kim', appointmentTime: '14:00', waitTime: '32 min', priority: 'Normal' },
-];
-
-const MOCK_CALLS = [
-    { id: 1, type: 'Incoming', number: '(555) 123-4567', purpose: 'Appointment booking', time: '2 min ago', handled: false },
-    { id: 2, type: 'Incoming', number: '(555) 987-6543', purpose: 'Insurance verification', time: '5 min ago', handled: true },
-    { id: 3, type: 'Outgoing', number: '(555) 456-7890', purpose: 'Appointment reminder', time: '12 min ago', handled: true },
-];
-
-const MOCK_BILLING = [
-    { id: '1', patient: 'Marcus Sterling', amount: '$250.00', service: 'Consultation', status: 'Paid', date: '2026-03-02' },
-    { id: '2', patient: 'Elena Rostova', amount: '$125.00', service: 'Follow-up', status: 'Pending', date: '2026-03-02' },
-    { id: '3', patient: 'James Wilson', amount: '$180.00', service: 'Lab Tests', status: 'Insurance', date: '2026-03-01' },
-];
-
-const getStatusColor = (status) => {
-    switch (status) {
-        case 'Critical': return 'bg-[var(--color-accent-red)] text-white';
-        case 'Urgent': return 'bg-[var(--color-accent-warning)] text-white';
-        case 'In Progress': return 'bg-[var(--color-accent-cyan)] text-[#0B1220]';
-        case 'Confirmed': return 'bg-[var(--color-accent-success)] text-white';
-        case 'Waiting': return 'bg-[var(--color-accent-warning)] text-white';
-        case 'Paid': return 'bg-[var(--color-accent-success)] text-white';
-        case 'Pending': return 'bg-[var(--color-accent-warning)] text-white';
-        case 'Insurance': return 'bg-[var(--color-accent-cyan)] text-[#0B1220]';
-        default: return 'bg-[var(--color-text-secondary)] text-white';
-    }
-};
-
-const getPriorityColor = (priority) => {
-    switch (priority) {
-        case 'Urgent': return 'text-[var(--color-accent-red)] border-[var(--color-accent-red)]';
-        case 'Normal': return 'text-[var(--color-accent-success)] border-[var(--color-accent-success)]';
-        default: return 'text-[var(--color-text-secondary)] border-[var(--color-border)]';
-    }
-};
+    useEffect(() => {
+        // Replace with real API endpoints
+        api.get('appointments').then(res => setAppointments(res.data || []));
+        api.get('patients/waiting').then(res => setWaitingPatients(res.data || []));
+        api.get('calls').then(res => setCalls(res.data || []));
+        api.get('billing').then(res => setBilling(res.data || []));
+    }, []);
 
 const ReceptionistDashboard = () => {
     const { user } = useAuth();

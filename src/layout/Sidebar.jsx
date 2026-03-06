@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
     ShieldPlus, LayoutDashboard, Users, FileText,
-    Activity, Settings, Eye, Clock, Calendar,
+    Activity, Settings, Eye, Clock, Calendar, MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -33,6 +33,8 @@ const NAV_ITEMS = {
         { label: 'Dashboard', path: '/patient', icon: LayoutDashboard },
         { label: 'My Records', path: '/patient/records', icon: FileText },
         { label: 'Privacy & Transparency', path: '/patient/transparency', icon: ShieldPlus },
+        { label: 'AI Assistant', path: '/ai-assistant', icon: MessageSquare },
+        { label: 'Appointments', path: '/appointments', icon: Calendar },
     ],
 };
 

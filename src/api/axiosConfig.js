@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { getCookie } from '../utils/cookieHelper';
 
 // Base API configuration for Node.js backend
 const api = axios.create({

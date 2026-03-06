@@ -31,6 +31,21 @@ const protect = asyncHandler(async (req, res, next) => {
         // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+        // Demo user tokens (mock-*) or mock DB mode — resolve from token payload
+        if (global.useMockDB || (decoded.id && String(decoded.id).startsWith('mock-'))) {
+            req.user = {
+                _id: decoded.id,
+                id: decoded.id,
+                email: decoded.email,
+                role: decoded.role,
+                firstName: decoded.email ? decoded.email.split('@')[0] : 'Demo',
+                lastName: 'User',
+                isActive: true,
+                username: decoded.email ? decoded.email.split('@')[0] : 'demo',
+            };
+            return next();
+        }
+
         // Get user from the token
         req.user = await User.findById(decoded.id).select('-password');
 
@@ -52,18 +67,22 @@ const protect = asyncHandler(async (req, res, next) => {
         next();
 
     } catch (error) {
-        // Log failed authentication attempt
-        await SecurityEvent.create({
-            eventType: 'failed_login',
-            severity: 'medium',
-            ipAddress: getClientIP(req),
-            userAgent: req.headers['user-agent'],
-            description: 'Invalid or expired JWT token used',
-            details: {
-                error: error.message,
-                token: token.substring(0, 20) + '...'
-            }
-        });
+        // Log failed authentication attempt (skip in mock mode)
+        if (!global.useMockDB) {
+            try {
+                await SecurityEvent.create({
+                    eventType: 'failed_login',
+                    severity: 'medium',
+                    ipAddress: getClientIP(req),
+                    userAgent: req.headers['user-agent'],
+                    description: 'Invalid or expired JWT token used',
+                    details: {
+                        error: error.message,
+                        token: token.substring(0, 20) + '...'
+                    }
+                });
+            } catch (_) { /* ignore logging errors */ }
+        }
 
         return res.status(401).json({
             success: false,

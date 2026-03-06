@@ -8,7 +8,8 @@ const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const slowDown = require('express-slow-down');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 // Import database connection
 const connectDB = require('./src/database/connection');
@@ -20,6 +21,13 @@ const patientRoutes = require('./src/routes/patients');
 const auditRoutes = require('./src/routes/audit');
 const securityRoutes = require('./src/routes/security');
 const privacyRoutes = require('./src/routes/privacy');
+const queryRoutes = require('./src/routes/queryRoutes');
+const aiRoutes = require('./src/routes/aiRoutes');
+const fileRoutes = require('./src/routes/fileRoutes');
+const appointmentRoutes = require('./src/routes/appointmentRoutes');
+const dashboardRoutes = require('./src/routes/dashboardRoutes');
+const http = require('http');
+const { initSocket } = require('./src/config/socket');
 
 // Import middleware
 const { errorHandler } = require('./src/middleware/errorHandler');
@@ -115,6 +123,11 @@ app.use('/api/patients', patientRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/privacy', privacyRoutes);
+app.use('/api/queries', queryRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/appointments', appointmentRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api', fileRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -138,10 +151,16 @@ process.on('SIGINT', () => {
     process.exit(0);
 });
 
+// Create HTTP server layer for Socket.IO
+const server = http.createServer(app);
+
+// Initialize WebSockets
+initSocket(server);
+
 // Start server
 // Default to 3001 so it matches the frontend axios baseURL and test scripts.
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     logger.info(`MedSecure Backend Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

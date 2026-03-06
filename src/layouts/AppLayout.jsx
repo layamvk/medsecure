@@ -36,7 +36,7 @@ const AppLayout = () => {
                 } else {
                     setShowAlert(false);
                 }
-            } catch (e) {
+            } catch {
                 // Silently handle errors - don't show to user
                 console.log('Threat score unavailable');
                 setShowAlert(false);

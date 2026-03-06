@@ -3,6 +3,7 @@ import api from '../api/axiosConfig';
 
 const AuthContext = createContext();
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => useContext(AuthContext);
 
 // Map lowercase backend role → Title-case frontend role
@@ -42,12 +43,27 @@ export const AuthProvider = ({ children }) => {
     const [deviceTrusted, setDeviceTrusted] = useState(false);
     const [sessionTime, setSessionTime] = useState(14 * 60 + 32);
     const [accessToken, setAccessToken] = useState(null);
+    const [authChecked, setAuthChecked] = useState(false);
+
+    // Restore authentication state on mount
+    useEffect(() => {
+        const token = localStorage.getItem('authToken');
+        if (token) {
+            api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+            setAccessToken(token);
+            setIsAuthenticated(true);
+            // Note: User info will be fetched on first API call or can be stored in localStorage
+            // For now, we just restore the authenticated state
+        }
+        setAuthChecked(true);
+    }, []);
 
     // When admin simulates a different role, keep user name accurate
     useEffect(() => {
         if (!isAuthenticated) return;
         if (isAdmin) return; // admin's user info stays fixed; only the role label changes
         setUser(prev => ({ ...prev })); // keep existing
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [role]);
 
     const establishSession = (token, userData) => {
@@ -116,7 +132,7 @@ export const AuthProvider = ({ children }) => {
     const logout = async () => {
         try { 
             await api.post('auth/logout'); 
-        } catch (_) {}
+        } catch { /* intentional: logout state cleanup continues regardless of network errors */ }
         setIsAuthenticated(false);
         setAccessToken(null);
         localStorage.removeItem('authToken');
@@ -144,6 +160,7 @@ export const AuthProvider = ({ children }) => {
             user, setUser,
             privacyBudget, setPrivacyBudget,
             isAuthenticated, setIsAuthenticated,
+            authChecked,
             deviceTrusted, setDeviceTrusted,
             sessionTime, setSessionTime,
             accessToken,

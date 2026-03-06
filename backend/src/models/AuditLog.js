@@ -11,7 +11,7 @@ const auditLogSchema = new mongoose.Schema({
         required: [true, 'Action is required'],
         enum: {
             values: [
-                'create', 'read', 'update', 'delete', 
+                'create', 'read', 'update', 'delete',
                 'login', 'logout', 'failed_login',
                 'export', 'access_denied', 'password_change',
                 'role_change', 'privacy_access', 'data_export'
@@ -23,14 +23,14 @@ const auditLogSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Resource type is required'],
         enum: {
-            values: ['User', 'Patient', 'AuditLog', 'SecurityEvent', 'PrivacyBudget'],
+            values: ['User', 'Patient', 'AuditLog', 'SecurityEvent', 'PrivacyBudget', 'Query'],
             message: 'Resource type must be a valid model name'
         }
     },
     resourceId: {
         type: String,
         validate: {
-            validator: function(v) {
+            validator: function (v) {
                 // Allow empty string for actions that don't target specific resources
                 return !v || mongoose.Types.ObjectId.isValid(v);
             },
@@ -40,9 +40,9 @@ const auditLogSchema = new mongoose.Schema({
     ipAddress: {
         type: String,
         validate: {
-            validator: function(v) {
+            validator: function (v) {
                 if (!v) return true;
-                
+
                 // IPv4 pattern
                 const ipv4 = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/;
                 // IPv6 pattern (simplified)
@@ -51,7 +51,7 @@ const auditLogSchema = new mongoose.Schema({
                 const ipv6Local = /^::1$/;
                 // IPv4-mapped IPv6
                 const ipv4Mapped = /^::ffff:[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/;
-                
+
                 return ipv4.test(v) || ipv6.test(v) || ipv6Local.test(v) || ipv4Mapped.test(v);
             },
             message: 'Please provide a valid IP address'
@@ -92,7 +92,7 @@ const auditLogSchema = new mongoose.Schema({
 });
 
 // Virtual for formatted timestamp
-auditLogSchema.virtual('formattedTimestamp').get(function() {
+auditLogSchema.virtual('formattedTimestamp').get(function () {
     return this.createdAt.toLocaleString();
 });
 
@@ -105,7 +105,7 @@ auditLogSchema.index({ success: 1, createdAt: -1 });
 auditLogSchema.index({ ipAddress: 1, createdAt: -1 });
 
 // Static method to create audit log entry
-auditLogSchema.statics.createLog = async function(logData) {
+auditLogSchema.statics.createLog = async function (logData) {
     try {
         const auditLog = new this(logData);
         await auditLog.save();
@@ -118,10 +118,10 @@ auditLogSchema.statics.createLog = async function(logData) {
 };
 
 // Static method to get user activity summary
-auditLogSchema.statics.getUserActivitySummary = async function(userId, days = 30) {
+auditLogSchema.statics.getUserActivitySummary = async function (userId, days = 30) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
-    
+
     return this.aggregate([
         {
             $match: {
@@ -146,10 +146,10 @@ auditLogSchema.statics.getUserActivitySummary = async function(userId, days = 30
 };
 
 // Static method to get system activity by time period
-auditLogSchema.statics.getActivityByPeriod = async function(period = 'daily', days = 7) {
+auditLogSchema.statics.getActivityByPeriod = async function (period = 'daily', days = 7) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
-    
+
     let groupBy;
     switch (period) {
         case 'hourly':
@@ -169,7 +169,7 @@ auditLogSchema.statics.getActivityByPeriod = async function(period = 'daily', da
             };
             break;
     }
-    
+
     return this.aggregate([
         {
             $match: {

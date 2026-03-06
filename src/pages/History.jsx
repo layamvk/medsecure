@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import Card from '../components/Card';
 import { Clock, FileText, User, Eye, AlertTriangle, CheckCircle } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-
 const MOCK_HISTORY_DATA = [
     {
         id: 1,
@@ -129,7 +127,6 @@ const formatTimestamp = (timestamp) => {
 };
 
 const History = () => {
-    const { user } = useAuth();
     const [filterRisk, setFilterRisk] = useState('All');
     const [searchTerm, setSearchTerm] = useState('');
 
