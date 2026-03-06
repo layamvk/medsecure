@@ -57,6 +57,16 @@ const sendTokenResponse = (user, statusCode, res, message = 'Success') => {
 // @route   POST /api/auth/register
 // @access  Public (or Admin only - adjust based on requirements)
 exports.register = asyncHandler(async (req, res, next) => {
+    // Check if database is connected
+    if (global.useMockDB) {
+        return res.status(503).json({
+            success: false,
+            error: 'Database not connected',
+            message: 'MongoDB Atlas connection failed. Please whitelist your IP address in MongoDB Atlas Network Access settings.',
+            action: 'Go to https://cloud.mongodb.com → Network Access → Add IP Address → Allow Access from Anywhere'
+        });
+    }
+
     const { email, username, password, firstName, lastName, role, phoneNumber } = req.body;
     const createdBy = req.user ? req.user.id : null;
 
@@ -108,6 +118,16 @@ exports.register = asyncHandler(async (req, res, next) => {
 // @route   POST /api/auth/login
 // @access  Public
 exports.login = asyncHandler(async (req, res, next) => {
+    // Check if database is connected
+    if (global.useMockDB) {
+        return res.status(503).json({
+            success: false,
+            error: 'Database not connected',
+            message: 'MongoDB Atlas connection failed. Please whitelist your IP address in MongoDB Atlas Network Access settings.',
+            action: 'Go to https://cloud.mongodb.com → Network Access → Add IP Address → Allow Access from Anywhere'
+        });
+    }
+
     const { email, password } = req.body;
     const ipAddress = getClientIP(req);
     const userAgent = req.headers['user-agent'];

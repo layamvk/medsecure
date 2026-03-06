@@ -19,7 +19,31 @@ const LoginForm = () => {
             const { dashboardPath } = await login(email, password);
             navigate(dashboardPath);
         } catch (err) {
-            setError('Invalid email or password. Please try again.');
+            let message = 'An unexpected error occurred. Please try again.';
+
+            // Axios error with HTTP response
+            if (err && err.response && err.response.data) {
+                if (err.response.data.error) {
+                    message = err.response.data.error;
+                } else if (typeof err.response.data.message === 'string') {
+                    message = err.response.data.message;
+                }
+            }
+            // Errors passed through axios interceptor as plain objects
+            else if (err && typeof err === 'object' && (err.error || err.message)) {
+                message = err.error || err.message;
+            }
+            // Pure network / CORS / server unreachable case
+            else if (!err || !err.response) {
+                message = 'Network error. Please check your connection and ensure the backend server is running.';
+            }
+
+            // Fallback to generic invalid credentials text if nothing better is available
+            if (!message) {
+                message = 'Invalid email or password. Please try again.';
+            }
+
+            setError(message);
         } finally {
             setIsLoading(false);
         }
@@ -51,6 +75,7 @@ const LoginForm = () => {
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             placeholder="e.g. doctor@gmail.com"
+                            autoComplete="email"
                             className="w-full bg-white/5 border border-white/10 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-blue transition-all"
                             required
                         />
@@ -63,6 +88,7 @@ const LoginForm = () => {
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
+                            autoComplete="current-password"
                             className="w-full bg-white/5 border border-white/10 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-blue transition-all"
                             required
                         />
@@ -74,6 +100,17 @@ const LoginForm = () => {
                     >
                         {isLoading ? 'Authenticating…' : 'Sign In'}
                     </button>
+
+                    <div className="text-center mt-6">
+                        <span className="text-text-secondary text-sm">Don't have an account? </span>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/register')}
+                            className="text-accent-blue hover:text-accent-purple font-medium text-sm transition-colors"
+                        >
+                            Create Account
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>

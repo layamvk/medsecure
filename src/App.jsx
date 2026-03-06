@@ -9,6 +9,7 @@ import PatientDetail from './pages/PatientDetail';
 import PrivacyBudget from './pages/PrivacyBudget';
 import History from './pages/History';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import NurseDashboard from './pages/NurseDashboard';
 import NursePatients from './pages/NursePatients';
 import AdminUsers from './pages/AdminUsers';
@@ -32,8 +33,9 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public Login Route */}
+          {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
 
           <Route path="/" element={<AppLayout />}>
             {/* Default Route handles redirection based on role */}

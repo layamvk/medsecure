@@ -3,7 +3,7 @@ import { getCookie } from '../utils/cookieHelper';
 
 // Base API configuration for Node.js backend
 const api = axios.create({
-  baseURL: process.env.NODE_ENV === 'production' ? '/api/' : 'http://localhost:3001/api/',
+  baseURL: import.meta.env.PROD ? '/api/' : 'http://localhost:3001/api/',
   withCredentials: true, // Send cookies for refresh token
   headers: {
     'Content-Type': 'application/json',
@@ -55,7 +55,20 @@ api.interceptors.response.use(
       const status = err.response.status;
       const errorData = err.response.data;
 
-      if (status === 401 && !originalRequest._retry) {
+      const isAuthLoginRequest =
+        originalRequest && typeof originalRequest.url === 'string'
+          ? originalRequest.url.includes('/auth/login')
+          : false;
+      const isAuthRefreshRequest =
+        originalRequest && typeof originalRequest.url === 'string'
+          ? originalRequest.url.includes('/auth/refresh')
+          : false;
+
+      // Only attempt token refresh for protected resource requests where we already had a token,
+      // and never for the login or refresh endpoints themselves.
+      const hasStoredToken = !!localStorage.getItem('authToken');
+
+      if (status === 401 && !originalRequest._retry && !isAuthLoginRequest && !isAuthRefreshRequest && hasStoredToken) {
         // Token expired or invalid - attempt refresh
         if (isRefreshing) {
           return new Promise(function (resolve, reject) {
@@ -74,20 +87,20 @@ api.interceptors.response.use(
         try {
           // Attempt refresh using cookie-stored refresh token
           const response = await api.post('auth/refresh');
-          
+
           if (response.data && response.data.success && response.data.token) {
             const newToken = response.data.token;
-            
+
             // Store new token
             localStorage.setItem('authToken', newToken);
-            
+
             // Update default headers
             api.defaults.headers.common['Authorization'] = 'Bearer ' + newToken;
             originalRequest.headers['Authorization'] = 'Bearer ' + newToken;
-            
+
             // Process queued requests
             processQueue(null, newToken);
-            
+
             // Retry original request
             return api(originalRequest);
           } else {
@@ -96,41 +109,33 @@ api.interceptors.response.use(
         } catch (refreshError) {
           // Refresh failed - redirect to login
           processQueue(refreshError, null);
-          
+
           // Clear stored tokens
           localStorage.removeItem('authToken');
           delete api.defaults.headers.common['Authorization'];
-          
+
           // Redirect to login page
           if (window.location.pathname !== '/login') {
             window.location.href = '/login';
           }
-          
+
           return Promise.reject(refreshError);
         } finally {
           isRefreshing = false;
         }
       } else if (status === 403) {
         // Forbidden - could be insufficient permissions or device trust
-        const message = errorData?.error || 'Access denied';
-        if (message.includes('trust')) {
-          alert('Device trust score is too low. Please contact administrator.');
-        }
         return Promise.reject(err);
       } else if (status === 429) {
         // Rate limited
-        const message = errorData?.error || 'Too many requests. Please try again later.';
-        alert(message);
         return Promise.reject(err);
       } else if (status >= 500) {
         // Server error
         console.error('Server error:', errorData);
-        alert('Server error. Please try again later.');
         return Promise.reject(err);
       }
-    } else if (err.code === 'NETWORK_ERROR' || !err.response) {
+    } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error' || !err.response) {
       // Network error
-      alert('Network error. Please check your connection.');
       return Promise.reject(err);
     }
 

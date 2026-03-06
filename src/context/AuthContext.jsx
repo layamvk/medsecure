@@ -52,6 +52,7 @@ export const AuthProvider = ({ children }) => {
 
     const establishSession = (token, userData) => {
         setAccessToken(token);
+        localStorage.setItem('authToken', token);
         api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
         setIsAuthenticated(true);
         if (userData) {
@@ -59,46 +60,66 @@ export const AuthProvider = ({ children }) => {
             const adminFlag = userData.role === 'admin';
             setRole(displayRole);
             setIsAdmin(adminFlag);
-            const fullName = [userData.first_name, userData.last_name].filter(Boolean).join(' ');
-            const avatar = (userData.first_name?.[0] || '') + (userData.last_name?.[0] || '');
-            setUser({ name: fullName || displayRole, email: userData.email, avatar: avatar || displayRole[0] });
+            const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ');
+            const avatar = (userData.firstName?.[0] || '') + (userData.lastName?.[0] || '');
+            setUser({ 
+                name: fullName || userData.username || displayRole, 
+                email: userData.email, 
+                avatar: avatar || displayRole[0] 
+            });
         }
     };
 
     const login = async (email, password) => {
-        // 1. Obtain tokens
-        const tokenResp = await api.post('auth/token/', { email, password });
-        const token = tokenResp.data.access;
-        setAccessToken(token);
-        api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+        try {
+            // 1. Call Node.js login endpoint
+            const response = await api.post('auth/login', { email, password });
+            
+            // 2. Extract token and user data from Node.js response format
+            const token = response.data?.token || response.token;
+            const userData = response.data?.user || response.user;
+            
+            if (!token || !userData) {
+                throw new Error('Invalid response from server');
+            }
+            
+            // 3. Establish session
+            establishSession(token, userData);
 
-        // 2. Use user info embedded in login response (added by CookieTokenObtainPairView)
-        const userData = tokenResp.data.user;
-        establishSession(token, userData);
-
-        // 3. Return dashboard path so LoginForm can navigate immediately (avoids async state timing)
-        const displayRole = toDisplayRole(userData?.role);
-        return { dashboardPath: rolePath(displayRole) };
+            // 4. Return dashboard path
+            const displayRole = toDisplayRole(userData?.role);
+            return { dashboardPath: rolePath(displayRole) };
+        } catch (error) {
+            console.error('Login error:', error);
+            throw error;
+        }
     };
 
     const refreshToken = async () => {
         try {
-            const resp = await api.post('auth/token/refresh/');
-            const token = resp.data.access;
-            setAccessToken(token);
-            api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+            const resp = await api.post('auth/refresh');
+            const token = resp.data?.token || resp.token;
+            if (token) {
+                setAccessToken(token);
+                localStorage.setItem('authToken', token);
+                api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+            }
             return token;
         } catch (e) {
             setIsAuthenticated(false);
             setAccessToken(null);
+            localStorage.removeItem('authToken');
             throw e;
         }
     };
 
     const logout = async () => {
-        try { await api.post('users/logout/'); } catch (_) {}
+        try { 
+            await api.post('auth/logout'); 
+        } catch (_) {}
         setIsAuthenticated(false);
         setAccessToken(null);
+        localStorage.removeItem('authToken');
         setUser(null);
         setIsAdmin(false);
         setRole('Doctor');

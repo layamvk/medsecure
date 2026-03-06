@@ -139,7 +139,8 @@ process.on('SIGINT', () => {
 });
 
 // Start server
-const PORT = process.env.PORT || 5000;
+// Default to 3001 so it matches the frontend axios baseURL and test scripts.
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     logger.info(`MedSecure Backend Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);

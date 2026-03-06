@@ -5,6 +5,7 @@ import Topbar from './Topbar';
 import PrivacyBudgetBar from '../components/security/PrivacyBudgetBar';
 import RiskAlertBanner from '../components/RiskAlertBanner';
 import { useEffect, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import api from '../api/axiosConfig';
 
 const Orbs = () => (
@@ -15,14 +16,20 @@ const Orbs = () => (
 );
 
 const AppLayout = () => {
+    const { isAuthenticated } = useAuth();
     const [showAlert, setShowAlert] = useState(false);
     const [alertMessage, setAlertMessage] = useState('');
 
     useEffect(() => {
+        // Only fetch threat score if user is authenticated
+        if (!isAuthenticated) {
+            return;
+        }
+
         const fetchThreat = async () => {
             try {
                 const res = await api.get('security/threat/');
-                const threat = res.data[0]?.score ?? 0;
+                const threat = res.data?.[0]?.score ?? res?.[0]?.score ?? 0;
                 if (threat > 80) {
                     setShowAlert(true);
                     setAlertMessage('System is in high-alert mode. MFA required for writes.');
@@ -30,13 +37,16 @@ const AppLayout = () => {
                     setShowAlert(false);
                 }
             } catch (e) {
-                console.error('Error fetching threat score', e);
+                // Silently handle errors - don't show to user
+                console.log('Threat score unavailable');
+                setShowAlert(false);
             }
         };
+        
         fetchThreat();
         const interval = setInterval(fetchThreat, 60000);
         return () => clearInterval(interval);
-    }, []);
+    }, [isAuthenticated]);
 
     return (
         <div className="min-h-screen w-full bg-primary text-text-primary font-sans flex">
