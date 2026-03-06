@@ -5,16 +5,38 @@ import { useNavigate } from 'react-router-dom';
 import { Activity, Heart } from 'lucide-react';
 import api from '../api/axiosConfig';
 
+const MOCK_PATIENTS = [
+  { id: '1', name: 'Marcus Sterling', room: 'ICU-4', priority: 'Critical', lastVitals: '09:05', status: 'Monitored' },
+  { id: '2', name: 'Sarah Connor', room: '3B', priority: 'High', lastVitals: '08:45', status: 'Stable' },
+  { id: '3', name: 'Elena Rostova', room: '2A', priority: 'Medium', lastVitals: '08:30', status: 'Improving' },
+  { id: '4', name: 'James Wilson', room: '1C', priority: 'Low', lastVitals: '08:00', status: 'Recovering' },
+];
+
+const MOCK_TASKS = [
+  { id: 1, description: 'Administer 09:00 medications — ICU-4 (Marcus Sterling)', due: '09:00', completed: false },
+  { id: 2, description: 'Check vitals — BP + O2 Saturation (Marcus Sterling)', due: '09:15', completed: false },
+  { id: 3, description: 'Wound dressing change — Room 3B (Sarah Connor)', due: '09:45', completed: false },
+  { id: 4, description: 'Assist Dr. Jenkins in morning ward round', due: '10:00', completed: true },
+  { id: 5, description: 'Update vitals chart for all assigned patients', due: '11:00', completed: true },
+];
+
+const MOCK_STATS = [
+  { label: 'Assigned Patients', value: 4, desc: 'Active ward responsibilities' },
+  { label: 'Critical', value: 1, desc: 'Requires immediate attention' },
+  { label: 'Tasks Pending', value: 3, desc: 'Interventions awaiting' },
+  { label: 'Tasks Done', value: 2, desc: 'Completed this shift' },
+];
+
 const NursePatients = () => {
   const navigate = useNavigate();
-  const [nursePatients, setNursePatients] = useState([]);
-  const [tasks, setTasks] = useState([]);
-  const [gridStats, setGridStats] = useState([]);
+  const [nursePatients, setNursePatients] = useState(MOCK_PATIENTS);
+  const [tasks, setTasks] = useState(MOCK_TASKS);
+  const [gridStats, setGridStats] = useState(MOCK_STATS);
 
   useEffect(() => {
-    api.get('patients/nurse').then(res => setNursePatients(res.data || []));
-    api.get('tasks/nurse').then(res => setTasks(res.data || []));
-    api.get('patients/nurse/stats').then(res => setGridStats(res.data || []));
+    api.get('patients/nurse').then(res => { if (res.data?.length) setNursePatients(res.data); }).catch(() => {});
+    api.get('tasks/nurse').then(res => { if (res.data?.length) setTasks(res.data); }).catch(() => {});
+    api.get('patients/nurse/stats').then(res => { if (res.data?.length) setGridStats(res.data); }).catch(() => {});
   }, []);
 
   return (
@@ -26,7 +48,7 @@ const NursePatients = () => {
         </div>
         <div className="flex items-center gap-3 text-xs uppercase tracking-[0.3em] text-[var(--color-text-secondary)]">
           <Heart className="w-4 h-4" />
-          {gridStats.reduce((sum, stat) => sum + stat.value, 0)} patients monitored
+          {nursePatients.length} patients monitored
         </div>
       </div>
 

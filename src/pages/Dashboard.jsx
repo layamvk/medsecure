@@ -4,9 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
     Users, MessageSquare, Clock, AlertTriangle, 
     Sparkles, Activity, Calendar, TrendingUp,
-    ArrowRight, Bell, Brain, Shield, Zap, Stethoscope
+    ArrowRight, Bell, Brain, Shield, Zap, Stethoscope, FileText, BarChart3, Settings
 } from 'lucide-react';
 import api from '../api/axiosConfig';
+import { useAuth } from '../context/AuthContext';
 import { useRealTimeAppointments } from '../hooks/useSocket';
 import CriticalAlertBanner from '../components/CriticalAlertBanner';
 
@@ -23,13 +24,38 @@ const fallbackActivity = [
     { id: 2, type: 'ai', message: 'AI + ML pipeline active', time: new Date().toISOString(), urgent: false },
 ];
 
-const quickActions = [
-    { label: 'View Patient Queries', path: '/staff/queries', icon: MessageSquare, color: 'bg-blue-500' },
-    { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles, color: 'bg-violet-500' },
-    { label: 'Appointments', path: '/appointments', icon: Calendar, color: 'bg-emerald-500' },
-];
+const QUICK_ACTIONS_BY_ROLE = {
+    Admin: [
+        { label: 'Analytics Dashboard', path: '/admin-dashboard', icon: BarChart3, color: 'bg-blue-500' },
+        { label: 'User Management', path: '/admin/users', icon: Users, color: 'bg-violet-500' },
+        { label: 'System Settings', path: '/admin/settings', icon: Settings, color: 'bg-emerald-500' },
+    ],
+    Doctor: [
+        { label: 'Patient Queries', path: '/staff/queries', icon: MessageSquare, color: 'bg-blue-500' },
+        { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles, color: 'bg-violet-500' },
+        { label: 'Appointments', path: '/appointments', icon: Calendar, color: 'bg-emerald-500' },
+    ],
+    Nurse: [
+        { label: 'My Patients', path: '/nurse/patients', icon: Users, color: 'bg-blue-500' },
+        { label: 'Patient Queries', path: '/staff/queries', icon: MessageSquare, color: 'bg-violet-500' },
+        { label: 'Appointments', path: '/appointments', icon: Calendar, color: 'bg-emerald-500' },
+    ],
+    Receptionist: [
+        { label: 'Patient Queries', path: '/staff/queries', icon: MessageSquare, color: 'bg-blue-500' },
+        { label: 'Appointments', path: '/appointments', icon: Calendar, color: 'bg-emerald-500' },
+        { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles, color: 'bg-violet-500' },
+    ],
+    Patient: [
+        { label: 'Submit a Query', path: '/patient/new-query', icon: FileText, color: 'bg-blue-500' },
+        { label: 'My Query History', path: '/patient/queries', icon: MessageSquare, color: 'bg-violet-500' },
+        { label: 'Book Appointment', path: '/appointments', icon: Calendar, color: 'bg-emerald-500' },
+    ],
+};
 
 export default function Dashboard() {
+    const { role } = useAuth();
+    const quickActions = QUICK_ACTIONS_BY_ROLE[role] || QUICK_ACTIONS_BY_ROLE.Doctor;
+    const primaryActionPath = { Admin: '/admin-dashboard', Doctor: '/staff/queries', Nurse: '/staff/queries', Receptionist: '/staff/queries', Patient: '/patient/queries' }[role] || '/staff/queries';
     const [stats, setStats] = useState(fallbackStats);
     const [activity, setActivity] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -268,7 +294,7 @@ export default function Dashboard() {
                                     <h3 className="text-xl font-bold mb-2">AI Response Assistant</h3>
                                     <p className="text-white/80 text-sm mb-4">Generate intelligent draft responses for patient queries with our ML-powered assistant.</p>
                                     <Link
-                                        to="/staff/queries"
+                                        to={primaryActionPath}
                                         className="inline-flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-sm font-medium transition-colors"
                                     >
                                         Get Started
@@ -288,7 +314,7 @@ export default function Dashboard() {
                     >
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-lg font-bold text-slate-900">Recent Activity</h2>
-                            <Link to="/staff/queries" className="text-sm font-medium text-blue-600 hover:text-blue-700">
+                            <Link to={primaryActionPath} className="text-sm font-medium text-blue-600 hover:text-blue-700">
                                 View All
                             </Link>
                         </div>
