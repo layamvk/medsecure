@@ -1,0 +1,12 @@
+/* App specific styles reset */
+#root {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Glass Card Helper */
+.glass-card {
+  @apply glass-panel rounded-xl;
+}
+
