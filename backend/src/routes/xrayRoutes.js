@@ -1,14 +1,14 @@
 /**
- * X-Ray Analysis Routes
- *
- * Dedicated endpoint for the X-Ray Analysis page.
- * Separate from the general AI chat endpoint.
+ * X-Ray Analysis Routes — ML-Powered Pipeline
  *
  * POST /api/xray/analyze
- *   - Accepts multipart/form-data with field `image`
- *   - Runs advanced X-ray preprocessing + analysis
- *   - Sends findings to Groq LLM for medical explanation
- *   - Returns structured results with confidence & risk levels
+ *   1. Receive multipart/form-data image
+ *   2. Run ML pipeline (CNN features → body region → abnormalities → heatmap)
+ *   3. Build structured findings summary
+ *   4. Send ONLY structured data to Groq for human-readable explanation
+ *   5. Return complete result to frontend
+ *
+ * The LLM never sees the raw image — detection is pure ML.
  */
 
 const express = require('express');
@@ -17,138 +17,91 @@ const sharp = require('sharp');
 const { protect } = require('../middleware/auth');
 const { analyzeXrayAdvanced } = require('../services/xrayAdvancedAnalyzer');
 const { generateAIResponse } = require('../services/aiResponseService');
-const { analyzeQuery } = require('../services/mlClassifier');
 
 const router = express.Router();
 
-// ─── Multer config for X-ray uploads (up to 15 MB) ──────────────────────────
+// ─── Multer config (up to 15 MB) ────────────────────────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/tiff', 'image/dicom'];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Accepted: JPEG, PNG, WEBP, TIFF.'), false);
-    }
+    cb(allowed.includes(file.mimetype) ? null : new Error('Invalid file type. Accepted: JPEG, PNG, WEBP, TIFF.'), allowed.includes(file.mimetype));
   },
 });
 
-// ─── Image cache for repeated analyses ───────────────────────────────────────
+// ─── Result cache (5 min TTL, max 50 entries) ───────────────────────────────
 const analysisCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
 const MAX_CACHE_SIZE = 50;
 
-function getCacheKey(buffer) {
-  // Simple hash based on buffer length + first/last bytes
-  const len = buffer.length;
-  const head = buffer.slice(0, Math.min(64, len)).toString('hex');
-  const tail = buffer.slice(Math.max(0, len - 64)).toString('hex');
+function cacheKey(buf) {
+  const len = buf.length;
+  const head = buf.slice(0, 64).toString('hex');
+  const tail = buf.slice(Math.max(0, len - 64)).toString('hex');
   return `${len}_${head}_${tail}`;
 }
 
 function getCached(key) {
-  const entry = analysisCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.timestamp > CACHE_TTL) {
-    analysisCache.delete(key);
-    return null;
-  }
-  return entry.data;
+  const e = analysisCache.get(key);
+  if (!e) return null;
+  if (Date.now() - e.ts > CACHE_TTL) { analysisCache.delete(key); return null; }
+  return e.data;
 }
 
 function setCache(key, data) {
-  if (analysisCache.size >= MAX_CACHE_SIZE) {
-    // Evict oldest
-    const oldest = analysisCache.keys().next().value;
-    analysisCache.delete(oldest);
-  }
-  analysisCache.set(key, { data, timestamp: Date.now() });
+  if (analysisCache.size >= MAX_CACHE_SIZE) analysisCache.delete(analysisCache.keys().next().value);
+  analysisCache.set(key, { data, ts: Date.now() });
 }
 
-// ─── X-ray specific preprocessing ───────────────────────────────────────────
-async function preprocessXray(buffer) {
-  const rawMeta = await sharp(buffer).metadata();
+// ─── Build Groq prompt from STRUCTURED ML results (no raw image) ─────────────
+function buildXrayGroqPrompt(analysisResult, userRole) {
+  const { bodyRegion, findings, quality, riskLevel, status } = analysisResult;
 
-  // Step 1: High-resolution resize (preserve detail)
-  const targetSize = 1024;
-
-  const processed = await sharp(buffer)
-    .rotate()                          // auto-orient via EXIF
-    .toColourspace('srgb')
-    .removeAlpha()
-    .resize(targetSize, targetSize, {
-      fit: 'contain',
-      background: { r: 0, g: 0, b: 0 },
-    })
-    .median(3)                         // light denoise
-    .normalise()                       // auto-level brightness/contrast
-    .sharpen({ sigma: 1.0 })           // enhance edges slightly
-    .png({ compressionLevel: 6 })
-    .toBuffer();
-
-  // Step 2: Create a contrast-enhanced version for analysis
-  const contrastEnhanced = await sharp(buffer)
-    .rotate()
-    .toColourspace('srgb')
-    .removeAlpha()
-    .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0 } })
-    .normalise()
-    .linear(1.3, -20)                  // contrast boost
-    .median(3)
-    .png({ compressionLevel: 6 })
-    .toBuffer();
-
-  const metadata = {
-    originalWidth: rawMeta.width,
-    originalHeight: rawMeta.height,
-    originalFormat: rawMeta.format,
-    channels: rawMeta.channels,
-    processedWidth: targetSize,
-    processedHeight: targetSize,
-    processedFormat: 'png',
-    aspectRatio: rawMeta.width && rawMeta.height ? (rawMeta.width / rawMeta.height).toFixed(2) : 'unknown',
-    fileSizeKB: (buffer.length / 1024).toFixed(1),
-  };
-
-  return { processed, contrastEnhanced, metadata };
-}
-
-// ─── Build Groq prompt specifically for X-ray ────────────────────────────────
-function buildXrayPrompt(findings, quality, userRole) {
   const lines = [
-    'You are analysing chest/skeletal X-ray findings from an automated image analysis system.',
-    `User role: ${userRole}`,
+    'You are a radiology AI assistant explaining X-ray analysis results to a healthcare user.',
+    `The user's role is: ${userRole}.`,
     '',
-    `Image quality score: ${quality.quality}/1.0`,
+    '── X-Ray ML Analysis Results ──',
+    '',
+    `Body Region Detected: ${bodyRegion.label} (confidence: ${(bodyRegion.confidence * 100).toFixed(1)}%)`,
+    `Overall Risk Level: ${riskLevel}`,
+    `Analysis Status: ${status}`,
+    `Image Quality: ${(quality.quality * 100).toFixed(0)}%`,
   ];
 
   if (quality.issues.length > 0) {
-    lines.push(`Quality issues: ${quality.issues.join('; ')}`);
+    lines.push(`Quality Issues: ${quality.issues.join('; ')}`);
   }
 
   lines.push('');
-  lines.push('Detected findings:');
 
-  findings.forEach((f, i) => {
-    lines.push(`  ${i + 1}. ${f.finding}`);
-    lines.push(`     Confidence: ${(f.confidence * 100).toFixed(0)}%`);
-    lines.push(`     Risk level: ${f.riskLevel}`);
-    lines.push(`     Region: ${f.region}`);
-    if (f.indicators && f.indicators.length > 0) {
-      lines.push(`     Indicators: ${f.indicators.join(', ')}`);
-    }
-  });
+  if (findings.length === 0) {
+    lines.push('Findings: No significant abnormalities detected by the ML model.');
+  } else {
+    lines.push(`Findings (${findings.length}):`);
+    findings.forEach((f, i) => {
+      lines.push(`  ${i + 1}. ${f.finding}`);
+      lines.push(`     Confidence: ${(f.confidence * 100).toFixed(0)}%`);
+      lines.push(`     Risk: ${f.riskLevel}`);
+      lines.push(`     Location: ${f.region}`);
+      if (f.indicators?.length) {
+        lines.push(`     Evidence: ${f.indicators.join('; ')}`);
+      }
+    });
+  }
 
   lines.push('');
-  lines.push('Task:');
-  lines.push('1. Explain each finding in clear, non-technical language suitable for the user role.');
-  lines.push('2. If confidence is below 60%, clearly state the finding is uncertain.');
-  lines.push('3. Provide clinical significance in simple terms.');
-  lines.push('4. Recommend appropriate next steps (specialist consultation, follow-up imaging, etc.).');
+  lines.push('── Instructions ──');
+  lines.push('1. Explain the body region identification and what it means.');
+  lines.push('2. For each finding, explain in clear language appropriate for the user role.');
+  lines.push('3. If any finding has confidence below 50%, clearly state it is uncertain.');
+  lines.push('4. Provide clinical significance and recommended next steps.');
   lines.push('5. Note the overall risk level and urgency.');
-  lines.push('6. Always end with: "This analysis is informational and not a medical diagnosis. Please consult a qualified medical professional."');
+  if (status === 'uncertain') {
+    lines.push('6. IMPORTANT: The analysis is flagged as UNCERTAIN. Emphasise that professional review is strongly recommended.');
+  }
+  lines.push('7. End with: "This is an AI-assisted analysis and not a medical diagnosis. Please consult a qualified medical professional."');
 
   return lines.join('\n');
 }
@@ -160,74 +113,82 @@ router.post('/analyze', protect, upload.single('image'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({
       error: 'X-ray image is required',
-      hint: 'Send a multipart/form-data request with field name "image"',
+      hint: 'Send multipart/form-data with field name "image"',
     });
   }
 
-  console.log(`[XRAY-ROUTE] Received X-ray: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)`);
+  console.log(`[XRAY-ROUTE] Received: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)`);
 
   try {
-    // Check cache first
-    const cacheKey = getCacheKey(req.file.buffer);
-    const cached = getCached(cacheKey);
+    // ── Cache check ──
+    const key = cacheKey(req.file.buffer);
+    const cached = getCached(key);
     if (cached) {
-      console.log('[XRAY-ROUTE] Cache hit — returning cached result');
+      console.log('[XRAY-ROUTE] Cache hit');
       return res.json({ ...cached, cached: true });
     }
 
-    // Step 1: X-ray specific preprocessing
-    const { processed, contrastEnhanced, metadata } = await preprocessXray(req.file.buffer);
-    console.log('[XRAY-ROUTE] Preprocessing complete:', JSON.stringify(metadata));
+    // ── Step 1: ML Analysis Pipeline ──
+    // (CNN feature extraction → body region classification →
+    //  abnormality detection → heatmap → quality assessment)
+    const analysisResult = await analyzeXrayAdvanced(req.file.buffer, {
+      originalName: req.file.originalname,
+      fileSizeKB: +(req.file.size / 1024).toFixed(1),
+    });
 
-    // Step 2: Run advanced analysis (use contrast-enhanced version for better accuracy)
-    const analysisResult = await analyzeXrayAdvanced(contrastEnhanced, metadata);
-    console.log(`[XRAY-ROUTE] Analysis: ${analysisResult.findings.length} finding(s), primary: "${analysisResult.primaryFinding}"`);
+    console.log(`[XRAY-ROUTE] ML analysis complete: ${analysisResult.bodyRegion.label}, ${analysisResult.findings.length} finding(s)`);
 
-    // Step 3: Generate AI explanation via Groq
+    // ── Step 2: Groq LLM Explanation (receives ONLY structured data) ──
     const userRole = req.user?.role || 'patient';
     let aiExplanation = '';
-    try {
-      const xrayPrompt = buildXrayPrompt(analysisResult.findings, analysisResult.quality, userRole);
-      const mlAnalysis = analyzeQuery('analyze this xray image');
 
+    try {
+      const prompt = buildXrayGroqPrompt(analysisResult, userRole);
       aiExplanation = await generateAIResponse(
-        xrayPrompt,
-        { ...mlAnalysis, category: 'radiology', severity: analysisResult.riskLevel === 'high' ? 'high' : 'medium' },
+        prompt,
+        { category: 'radiology', severity: analysisResult.riskLevel === 'high' ? 'high' : 'medium' },
         [],
         userRole,
         {
           imageType: 'xray',
+          bodyRegion: analysisResult.bodyRegion.label,
           visualFinding: analysisResult.primaryFinding,
           confidence: analysisResult.confidence,
           findings: analysisResult.findings,
           lowConfidence: analysisResult.confidence < 0.5,
-        }
+        },
       );
     } catch (aiErr) {
-      console.error('[XRAY-ROUTE] Groq AI explanation failed:', aiErr?.message);
-      aiExplanation = `Analysis detected: ${analysisResult.primaryFinding}. Confidence: ${(analysisResult.confidence * 100).toFixed(0)}%. Please consult a medical professional for proper diagnosis. This analysis is informational and not a medical diagnosis.`;
+      console.error('[XRAY-ROUTE] Groq explanation failed:', aiErr?.message);
+      aiExplanation = [
+        `Body region detected: ${analysisResult.bodyRegion.label} (${(analysisResult.bodyRegion.confidence * 100).toFixed(0)}% confidence).`,
+        `Primary finding: ${analysisResult.primaryFinding}.`,
+        `Confidence: ${(analysisResult.confidence * 100).toFixed(0)}%.`,
+        'Please consult a medical professional for proper diagnosis.',
+        'This analysis is informational and not a medical diagnosis.',
+      ].join(' ');
     }
 
-    // Step 4: Classify confidence level
+    // ── Step 3: Classify confidence level ──
     let confidenceLevel;
-    if (analysisResult.confidence < 0.5) {
-      confidenceLevel = 'uncertain';
-    } else if (analysisResult.confidence <= 0.8) {
-      confidenceLevel = 'moderate';
-    } else {
-      confidenceLevel = 'high';
-    }
+    if (analysisResult.confidence < 0.5) confidenceLevel = 'uncertain';
+    else if (analysisResult.confidence <= 0.8) confidenceLevel = 'moderate';
+    else confidenceLevel = 'high';
 
     const processingTime = Date.now() - startTime;
 
-    const responsePayload = {
+    const payload = {
       success: true,
+
+      // Body region (NEW)
+      bodyRegion: analysisResult.bodyRegion,
 
       // Primary result
       primaryFinding: analysisResult.primaryFinding,
       confidence: analysisResult.confidence,
       confidenceLevel,
       riskLevel: analysisResult.riskLevel,
+      status: analysisResult.status,
 
       // All findings
       findings: analysisResult.findings,
@@ -235,41 +196,43 @@ router.post('/analyze', protect, upload.single('image'), async (req, res) => {
       // AI explanation
       aiExplanation,
 
+      // Heatmap (NEW)
+      heatmap: analysisResult.heatmap,
+
       // Image quality
       quality: analysisResult.quality,
 
       // Technical details
       details: analysisResult.details,
-      metadata,
+      metadata: analysisResult.metadata,
 
       // Performance
       processingTimeMs: processingTime,
       cached: false,
 
       // Safety
-      disclaimer: 'This analysis is informational and not a medical diagnosis. Please consult a qualified medical professional for accurate evaluation.',
+      disclaimer: 'This is an AI-assisted analysis and not a medical diagnosis. Please consult a qualified medical professional for accurate evaluation.',
     };
 
-    // Cache the result
-    setCache(cacheKey, responsePayload);
-
+    setCache(key, payload);
     console.log(`[XRAY-ROUTE] Response sent in ${processingTime}ms`);
-    res.json(responsePayload);
+    res.json(payload);
   } catch (error) {
     console.error('[XRAY-ROUTE] Analysis error:', error?.message || error);
     res.status(500).json({
       error: 'X-ray analysis failed',
       details: error?.message || 'Unknown error',
+      status: 'uncertain',
       disclaimer: 'This analysis is informational and not a medical diagnosis.',
     });
   }
 });
 
-// ─── GET /api/xray/health — quick health/readiness check ────────────────────
+// ─── Health check ────────────────────────────────────────────────────────────
 router.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    service: 'xray-analysis',
+    service: 'xray-analysis-ml',
     cacheSize: analysisCache.size,
     timestamp: new Date().toISOString(),
   });
