@@ -105,7 +105,7 @@ const AdminSettings = () => {
       </Section>
 
       <div className="flex justify-end">
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-[var(--color-accent-cyan)] text-black text-[10px] font-black uppercase tracking-[0.3em] rounded-[2px] hover:opacity-90 transition-opacity">
+        <button onClick={() => { localStorage.setItem('adminSettings', JSON.stringify(settings)); alert('Configuration saved successfully!'); }} className="flex items-center gap-2 px-5 py-2.5 bg-[var(--color-accent-cyan)] text-black text-[10px] font-black uppercase tracking-[0.3em] rounded-[2px] hover:opacity-90 transition-opacity">
           <Save className="w-3.5 h-3.5" />
           Save Configuration
         </button>

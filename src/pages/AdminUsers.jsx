@@ -33,6 +33,8 @@ const ROLE_COUNTS = MOCK_USERS.reduce((acc, u) => {
 const AdminUsers = () => {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
+  const [showProvisionModal, setShowProvisionModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
 
   const roles = ['All', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Patient'];
 
@@ -55,7 +57,7 @@ const AdminUsers = () => {
             Personnel directory, access roles, and MFA compliance.
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 text-[10px] font-black uppercase tracking-[0.3em] border border-[var(--color-accent-cyan)] text-[var(--color-accent-cyan)] hover:bg-[var(--color-accent-cyan)]/10 transition-colors rounded-[2px]">
+        <button onClick={() => { setShowProvisionModal(true); setSelectedUser(null); }} className="flex items-center gap-2 px-4 py-2 text-[10px] font-black uppercase tracking-[0.3em] border border-[var(--color-accent-cyan)] text-[var(--color-accent-cyan)] hover:bg-[var(--color-accent-cyan)]/10 transition-colors rounded-[2px]">
           <UserPlus className="w-3.5 h-3.5" />
           Provision User
         </button>
@@ -156,7 +158,7 @@ const AdminUsers = () => {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <button className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-accent-cyan)] hover:underline">
+                      <button onClick={() => { setShowProvisionModal(true); setSelectedUser(user); }} className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-accent-cyan)] hover:underline">
                         Edit
                       </button>
                     </td>
@@ -167,6 +169,41 @@ const AdminUsers = () => {
           </table>
         </div>
       </Card>
+
+      {/* Provision/Edit Modal */}
+      {showProvisionModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center">
+          <Card className="max-w-md w-full">
+            <h2 className="text-lg font-black text-[var(--color-text-primary)] uppercase mb-4">
+              {selectedUser ? 'Edit User' : 'Provision New User'}
+            </h2>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-black uppercase text-[var(--color-text-secondary)]">Name</label>
+                <input type="text" placeholder="Full Name" defaultValue={selectedUser?.name || ''} className="w-full bg-[var(--color-primary)] border border-[var(--color-border)] text-[var(--color-text-primary)] px-3 py-2 rounded-[2px] text-xs mt-1 outline-none" />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-[var(--color-text-secondary)]">Email</label>
+                <input type="email" placeholder="Email Address" defaultValue={selectedUser?.email || ''} className="w-full bg-[var(--color-primary)] border border-[var(--color-border)] text-[var(--color-text-primary)] px-3 py-2 rounded-[2px] text-xs mt-1 outline-none" />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-[var(--color-text-secondary)]">Role</label>
+                <select defaultValue={selectedUser?.role || 'Doctor'} className="w-full bg-[var(--color-primary)] border border-[var(--color-border)] text-[var(--color-text-primary)] px-3 py-2 rounded-[2px] text-xs mt-1 outline-none">
+                  <option>Admin</option>
+                  <option>Doctor</option>
+                  <option>Nurse</option>
+                  <option>Receptionist</option>
+                  <option>Patient</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6 justify-end">
+              <button onClick={() => { setShowProvisionModal(false); setSelectedUser(null); }} className="px-4 py-2 text-[10px] font-black uppercase border border-[var(--color-border)] rounded-[2px] hover:bg-[var(--color-secondary)]">Cancel</button>
+              <button onClick={() => { alert('User ' + (selectedUser ? 'updated' : 'created') + ' successfully!'); setShowProvisionModal(false); setSelectedUser(null); }} className="px-4 py-2 text-[10px] font-black uppercase bg-[var(--color-accent-cyan)] text-black rounded-[2px]">Save</button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };
