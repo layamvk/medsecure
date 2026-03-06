@@ -11,7 +11,15 @@ const router = express.Router();
 // Multer setup for optional symptom image upload (memory storage)
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB — larger for X-ray / prescription images
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/tiff'];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Accepted: JPEG, PNG, WEBP, TIFF.'), false);
+    }
+  },
 });
 
 // Helper: format appointments into a short human summary
@@ -108,8 +116,14 @@ router.post('/chat', protect, upload.single('image'), async (req, res) => {
 
   console.log('AI /chat incoming message:', message);
 
-  if (!message) {
-    return res.status(400).json({ error: 'Message is required' });
+  // Allow image-only submissions (no text required when image is provided)
+  if (!message && !req.file) {
+    return res.status(400).json({ error: 'Message or image is required' });
+  }
+
+  // Default message when only an image is sent
+  if (!message && req.file) {
+    message = 'Please analyze this medical image.';
   }
 
   try {
@@ -136,17 +150,19 @@ router.post('/chat', protect, upload.single('image'), async (req, res) => {
     }
 
     // 2. Decide intent-driven system action or AI response
+    // When an image is present, always use Groq AI to explain the findings
     const intent = mlAnalysis.intent || 'general_health_question';
+    const hasImage = imageAnalysis && imageAnalysis.imageType;
     let aiResponse;
     let action = null;
     let fallbackUsed = false;
 
     try {
-      if (intent === 'check_appointment') {
+      if (!hasImage && intent === 'check_appointment') {
         const appointments = await getAppointmentsForUser(req.user);
         aiResponse = summariseAppointments(appointments);
         action = { type: 'SHOW_APPOINTMENTS', appointments };
-      } else if (intent === 'book_appointment') {
+      } else if (!hasImage && intent === 'book_appointment') {
         const details = extractAppointmentDetails(message, safeHistory);
         if (!details.isComplete) {
           aiResponse = 'I can help you book an appointment. Please tell me the department (for example, Cardiology), the date (YYYY-MM-DD), and your preferred time (HH:MM).';
@@ -168,10 +184,10 @@ router.post('/chat', protect, upload.single('image'), async (req, res) => {
           aiResponse = `Your appointment has been booked with the ${details.department} clinic on ${details.date} at ${details.time}. You will see it in your appointments list.`;
           action = { type: 'APPOINTMENT_CREATED', appointment: result.appointment };
         }
-      } else if (intent === 'buy_medicine') {
+      } else if (!hasImage && intent === 'buy_medicine') {
         aiResponse = 'I can help you with medicines. I will open the medicine store where you can review and request medications recommended by your clinician.';
         action = { type: 'NAVIGATE', target: '/medicine-store', reason: 'buy_medicine' };
-      } else if (intent === 'insurance_info') {
+      } else if (!hasImage && intent === 'insurance_info') {
         aiResponse = 'You can review your insurance and billing details in the Insurance section. I will open the relevant page so you can check coverage and recent claims.';
         action = { type: 'NAVIGATE', target: '/insurance', reason: 'insurance_info' };
       } else {
@@ -206,9 +222,18 @@ router.post('/chat', protect, upload.single('image'), async (req, res) => {
       symptomTags: mlAnalysis.symptomTags || [],
       fallbackUsed,
       action,
-      imageAnalysis,
+      // Rich image analysis fields
+      imageAnalysis: imageAnalysis || null,
       visualFinding: imageAnalysis?.visualFinding || null,
       visualConfidence: typeof imageAnalysis?.confidence === 'number' ? imageAnalysis.confidence : null,
+      imageType: imageAnalysis?.imageType || null,
+      imageLowConfidence: imageAnalysis?.lowConfidence || false,
+      imageWarning: imageAnalysis?.warning || null,
+      imageFindings: imageAnalysis?.findings || null,
+      imageMedications: imageAnalysis?.medications || null,
+      imageDosageSummary: imageAnalysis?.dosageSummary || null,
+      imageInstructions: imageAnalysis?.instructions || null,
+      imageDetails: imageAnalysis?.details || null,
       classification: {
         category: mlAnalysis.category,
         severity: mlAnalysis.severity,
@@ -221,7 +246,7 @@ router.post('/chat', protect, upload.single('image'), async (req, res) => {
         symptomTags: mlAnalysis.symptomTags || [],
         intent,
         intentConfidence: mlAnalysis.intentConfidence,
-        imageAnalysis,
+        imageAnalysis: imageAnalysis || null,
       },
     };
 

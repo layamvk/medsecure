@@ -9,6 +9,9 @@
 .env.production
 .env.*.local
 
+# Tesseract OCR language data (auto-downloaded at runtime)
+*.traineddata
+
 # Database files
 *.sqlite3
 *.db

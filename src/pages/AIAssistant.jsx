@@ -1,7 +1,11 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Send, Bot, User, AlertTriangle, Brain, Shield, Clock, CalendarPlus, Image as ImageIcon } from "lucide-react";
+import {
+  Sparkles, Send, Bot, User, AlertTriangle, Brain, Shield, Clock,
+  CalendarPlus, Image as ImageIcon, Camera, X, Upload, FileText,
+  Activity, Eye, Pill, Stethoscope
+} from "lucide-react";
 import api from "../api/axiosConfig";
 
 const AIAssistant = () => {
@@ -9,15 +13,19 @@ const AIAssistant = () => {
   const [messages, setMessages] = useState([
     {
       role: "ai",
-      text: "Hello! I'm your AI Medical Assistant powered by ML classification and Groq AI. I can help answer health questions, classify urgency, and provide guidance. How can I help you today?",
+      text: "Hello! I'm your AI Medical Assistant powered by ML classification and Groq AI with medical image analysis. I can analyze X-rays, prescriptions, injuries, and skin conditions. Send a message, attach an image, or both!",
       classification: null
     }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-    const [selectedImage, setSelectedImage] = useState(null);
-    const [imagePreview, setImagePreview] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
   const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const dropZoneRef = useRef(null);
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -27,15 +35,64 @@ const AIAssistant = () => {
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
+    selectImageFile(file);
+  };
+
+  const selectImageFile = (file) => {
     if (!file) {
       setSelectedImage(null);
       setImagePreview(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Image must be under 10 MB.");
       return;
     }
     setSelectedImage(file);
     const url = URL.createObjectURL(file);
     setImagePreview(url);
   };
+
+  const clearImage = () => {
+    setSelectedImage(null);
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+      setImagePreview(null);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+  };
+
+  // ── Drag-and-drop handlers ──
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget)) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) selectImageFile(file);
+  }, []);
 
   const buildDynamicLocalFallback = (text) => {
     const query = text.toLowerCase();
@@ -94,9 +151,9 @@ const AIAssistant = () => {
   };
 
   const handleSend = async () => {
-    if (!input.trim()) return;
-    const cleanInput = input.trim();
-    const userMessage = { role: "patient", text: cleanInput, classification: null };
+    if (!input.trim() && !selectedImage) return;
+    const cleanInput = input.trim() || (selectedImage ? "Please analyze this medical image." : "");
+    const userMessage = { role: "patient", text: cleanInput, classification: null, imagePreview: imagePreview || null };
     const historyPayload = messages.slice(-6).map((item) => ({
       role: item.role,
       text: item.text,
@@ -146,9 +203,18 @@ const AIAssistant = () => {
           fallbackUsed: Boolean(res.data?.fallbackUsed),
           intent: res.data?.intent,
           action: res.data?.action || null,
+          // Rich image analysis
           imageAnalysis: res.data?.imageAnalysis || null,
           visualFinding: res.data?.visualFinding || null,
           visualConfidence: res.data?.visualConfidence ?? null,
+          imageType: res.data?.imageType || null,
+          imageLowConfidence: res.data?.imageLowConfidence || false,
+          imageWarning: res.data?.imageWarning || null,
+          imageFindings: res.data?.imageFindings || null,
+          imageMedications: res.data?.imageMedications || null,
+          imageDosageSummary: res.data?.imageDosageSummary || null,
+          imageInstructions: res.data?.imageInstructions || null,
+          imageDetails: res.data?.imageDetails || null,
         }
       ]);
     } catch (e) {
@@ -167,11 +233,7 @@ const AIAssistant = () => {
         }
       ]);
     }
-    setSelectedImage(null);
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview);
-      setImagePreview(null);
-    }
+    clearImage();
     setLoading(false);
   };
 
@@ -186,8 +248,31 @@ const AIAssistant = () => {
     "I've been having headaches for the past few days",
     "Can I get a refill on my prescription?",
     "I need to schedule a follow-up appointment",
-    "I'm experiencing chest pain and shortness of breath"
+    "I'm experiencing chest pain and shortness of breath",
+    "Analyze my X-ray for any abnormalities",
+    "I have a rash on my arm — what could it be?"
   ];
+
+  /** Map image types to icons */
+  const imageTypeIcon = (type) => {
+    switch (type) {
+      case 'xray': return <Activity className="w-3.5 h-3.5" />;
+      case 'prescription': return <Pill className="w-3.5 h-3.5" />;
+      case 'injury': return <Stethoscope className="w-3.5 h-3.5" />;
+      case 'skin_condition': return <Eye className="w-3.5 h-3.5" />;
+      default: return <ImageIcon className="w-3.5 h-3.5" />;
+    }
+  };
+
+  const imageTypeLabel = (type) => {
+    switch (type) {
+      case 'xray': return 'X-Ray';
+      case 'prescription': return 'Prescription';
+      case 'injury': return 'Injury';
+      case 'skin_condition': return 'Skin Condition';
+      default: return 'Image';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 py-8 px-6">
@@ -217,11 +302,33 @@ const AIAssistant = () => {
 
         {/* Chat Area */}
         <motion.div
+          ref={dropZoneRef}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="flex-1 bg-white/60 backdrop-blur-xl rounded-3xl border border-white/40 shadow-lg flex flex-col overflow-hidden"
+          className={`flex-1 bg-white/60 backdrop-blur-xl rounded-3xl border shadow-lg flex flex-col overflow-hidden transition-colors ${isDragging ? 'border-blue-400 bg-blue-50/40 ring-2 ring-blue-300/50' : 'border-white/40'}`}
         >
+          {/* Drag overlay */}
+          <AnimatePresence>
+            {isDragging && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-50 flex items-center justify-center bg-blue-50/80 backdrop-blur-sm rounded-3xl pointer-events-none"
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <Upload className="w-12 h-12 text-blue-500" />
+                  <p className="text-blue-700 font-semibold text-lg">Drop medical image here</p>
+                  <p className="text-blue-500 text-sm">X-ray, prescription, injury photo, or skin condition</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <AnimatePresence initial={false}>
@@ -241,6 +348,13 @@ const AIAssistant = () => {
                   )}
 
                   <div className={`max-w-[75%] ${msg.role === "patient" ? "order-first" : ""}`}>
+                    {/* User image preview */}
+                    {msg.role === "patient" && msg.imagePreview && (
+                      <div className="mb-2 rounded-xl overflow-hidden border border-blue-400/30 max-w-[200px] ml-auto">
+                        <img src={msg.imagePreview} alt="Uploaded" className="w-full h-auto max-h-40 object-cover" />
+                      </div>
+                    )}
+
                     <div
                       className={`px-5 py-3.5 rounded-2xl ${
                         msg.role === "ai"
@@ -250,6 +364,109 @@ const AIAssistant = () => {
                     >
                       <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                     </div>
+
+                    {/* ── IMAGE ANALYSIS CARD (AI messages only) ── */}
+                    {msg.role === "ai" && msg.imageType && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.25 }}
+                        className="mt-3 ml-1 rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/80 to-violet-50/60 p-4 shadow-sm"
+                      >
+                        {/* Header */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                            {imageTypeIcon(msg.imageType)}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-sm text-indigo-900">
+                              {imageTypeLabel(msg.imageType)} Analysis
+                            </span>
+                            {typeof msg.visualConfidence === 'number' && (
+                              <span className={`ml-2 text-xs px-2 py-0.5 rounded-full font-medium ${msg.visualConfidence >= 0.7 ? 'bg-emerald-100 text-emerald-700' : msg.visualConfidence >= 0.4 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                {Math.round(msg.visualConfidence * 100)}% confidence
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Low confidence warning */}
+                        {msg.imageLowConfidence && (
+                          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                            <span>{msg.imageWarning || "Image analysis confidence is low. Please consult a healthcare professional."}</span>
+                          </div>
+                        )}
+
+                        {/* Primary finding */}
+                        {msg.visualFinding && (
+                          <div className="mb-2 text-sm text-slate-700">
+                            <span className="font-medium text-indigo-800">Finding: </span>
+                            {msg.visualFinding}
+                          </div>
+                        )}
+
+                        {/* Detailed findings list */}
+                        {msg.imageFindings && msg.imageFindings.length > 0 && msg.imageType !== 'prescription' && (
+                          <div className="mb-2 space-y-1.5">
+                            {msg.imageFindings.map((f, fi) => (
+                              <div key={fi} className="flex items-start gap-2 text-xs">
+                                <span className={`inline-block mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${f.confidence >= 0.7 ? 'bg-emerald-400' : f.confidence >= 0.4 ? 'bg-amber-400' : 'bg-red-400'}`} />
+                                <div>
+                                  <span className="font-medium text-slate-800">{f.finding}</span>
+                                  <span className="ml-1 text-slate-500">({Math.round((f.confidence || 0) * 100)}%)</span>
+                                  {f.region && <span className="ml-1 text-slate-400">— {f.region}</span>}
+                                  {f.indicators && f.indicators.length > 0 && (
+                                    <div className="text-slate-400 mt-0.5">Indicators: {f.indicators.join(', ')}</div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Prescription: medications */}
+                        {msg.imageMedications && msg.imageMedications.length > 0 && (
+                          <div className="mb-2">
+                            <div className="text-xs font-semibold text-indigo-800 mb-1 flex items-center gap-1">
+                              <Pill className="w-3 h-3" /> Medications Detected
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {msg.imageMedications.map((m, mi) => (
+                                <span key={mi} className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg bg-white border border-indigo-200 text-indigo-800 font-medium">
+                                  {m.name}{m.dosage ? ` — ${m.dosage}` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Prescription: dosage summary */}
+                        {msg.imageDosageSummary && (
+                          <div className="text-xs text-slate-600 mb-1">
+                            <span className="font-medium">Dosage: </span>{msg.imageDosageSummary}
+                          </div>
+                        )}
+
+                        {/* Prescription: instructions */}
+                        {msg.imageInstructions && msg.imageInstructions.length > 0 && (
+                          <div className="text-xs text-slate-600 mb-1">
+                            <span className="font-medium">Instructions: </span>{msg.imageInstructions.join(', ')}
+                          </div>
+                        )}
+
+                        {/* Technical details (collapsible feel — always-open for brevity) */}
+                        {msg.imageDetails && (
+                          <div className="mt-2 pt-2 border-t border-indigo-100 flex flex-wrap gap-2">
+                            {Object.entries(msg.imageDetails).map(([k, v]) => (
+                              <span key={k} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500 font-mono">
+                                {k}: {typeof v === 'number' ? v.toFixed(3) : v}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
 
                     {/* ML Classification Badge (AI messages only) */}
                     {msg.role === "ai" && msg.classification && (
@@ -271,7 +488,8 @@ const AIAssistant = () => {
                           <Sparkles className="w-3 h-3" />
                           {Math.round(msg.classification.confidence * 100)}% confidence
                         </span>
-                        {(msg.imageAnalysis?.visualFinding || msg.visualFinding) && (
+                        {/* Legacy simple image badge (only show when no rich imageType analysis card) */}
+                        {!msg.imageType && (msg.imageAnalysis?.visualFinding || msg.visualFinding) && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-rose-50 text-rose-700 border border-rose-200">
                             <ImageIcon className="w-3 h-3" />
                             {(msg.imageAnalysis?.visualFinding || msg.visualFinding)}
@@ -466,58 +684,104 @@ const AIAssistant = () => {
 
           {/* Input Area */}
           <div className="p-4 border-t border-slate-200/60 bg-slate-50/50">
+            {/* Image preview bar */}
+            <AnimatePresence>
+              {imagePreview && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-3 flex items-center gap-3 px-3 py-2 rounded-xl bg-indigo-50/80 border border-indigo-200"
+                >
+                  <div className="w-14 h-14 rounded-lg overflow-hidden border border-indigo-200 bg-white flex-shrink-0">
+                    <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-indigo-800 truncate">{selectedImage?.name || 'Image attached'}</p>
+                    <p className="text-[10px] text-indigo-500">{selectedImage ? `${(selectedImage.size / 1024).toFixed(1)} KB` : ''}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearImage}
+                    className="p-1.5 rounded-lg hover:bg-indigo-100 text-indigo-400 hover:text-indigo-700 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <form
-              className="flex items-center gap-3"
+              className="flex items-center gap-2"
               onSubmit={(e) => { e.preventDefault(); handleSend(); }}
             >
-              <div className="flex-1 flex items-center gap-2">
-                <label
-                  htmlFor="ai-image-input"
-                  className={`flex items-center justify-center w-10 h-10 rounded-xl border text-slate-500 hover:text-blue-600 hover:border-blue-300 bg-white cursor-pointer transition-colors ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <ImageIcon className="w-5 h-5" />
-                </label>
+              {/* Image upload button */}
+              <label
+                htmlFor="ai-image-input"
+                title="Upload medical image"
+                className={`flex items-center justify-center w-10 h-10 rounded-xl border text-slate-500 hover:text-blue-600 hover:border-blue-300 bg-white cursor-pointer transition-colors ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <ImageIcon className="w-5 h-5" />
+              </label>
+              <input
+                ref={fileInputRef}
+                id="ai-image-input"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageChange}
+                disabled={loading}
+              />
+
+              {/* Camera capture button */}
+              <label
+                htmlFor="ai-camera-input"
+                title="Capture with camera"
+                className={`flex items-center justify-center w-10 h-10 rounded-xl border text-slate-500 hover:text-emerald-600 hover:border-emerald-300 bg-white cursor-pointer transition-colors ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <Camera className="w-5 h-5" />
+              </label>
+              <input
+                ref={cameraInputRef}
+                id="ai-camera-input"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleImageChange}
+                disabled={loading}
+              />
+
+              {/* Text input */}
+              <div className="flex-1">
                 <input
-                  id="ai-image-input"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageChange}
+                  className="w-full px-5 py-3 bg-white border-2 border-slate-200/60 rounded-2xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 transition-all"
+                  placeholder={selectedImage ? "Describe your concern or send image for analysis…" : "Describe your symptoms or health question..."}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   disabled={loading}
                 />
-                <div className="flex-1 flex flex-col gap-1">
-                  <input
-                    className="w-full px-5 py-3 bg-white border-2 border-slate-200/60 rounded-2xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 transition-all"
-                    placeholder="Describe your symptoms or health question..."
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    disabled={loading}
-                  />
-                  {imagePreview && (
-                    <div className="flex items-center gap-2 text-xs text-slate-500 pl-1">
-                      <div className="w-8 h-8 rounded-md overflow-hidden border border-slate-200 bg-slate-100">
-                        <img src={imagePreview} alt="Selected symptom" className="w-full h-full object-cover" />
-                      </div>
-                      <span>Image attached</span>
-                    </div>
-                  )}
-                </div>
               </div>
+
+              {/* Send button */}
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 type="submit"
                 className={`p-3 rounded-xl transition-all ${
-                  loading || !input.trim()
+                  loading || (!input.trim() && !selectedImage)
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     : 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 hover:bg-blue-700'
                 }`}
-                disabled={loading || !input.trim()}
+                disabled={loading || (!input.trim() && !selectedImage)}
               >
                 <Send className="w-5 h-5" />
               </motion.button>
             </form>
+            <p className="text-[10px] text-slate-400 mt-2 text-center">
+              Supports X-ray, prescription, injury, and skin condition images. Drag & drop or use the buttons above.
+            </p>
           </div>
         </motion.div>
       </div>
