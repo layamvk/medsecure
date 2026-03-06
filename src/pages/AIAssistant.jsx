@@ -4,17 +4,19 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, Send, Bot, User, AlertTriangle, Brain, Shield, Clock,
   CalendarPlus, Image as ImageIcon, Camera, X, Upload, FileText,
-  Activity, Eye, Pill, Stethoscope
+  Activity, Eye, Pill, Stethoscope, Zap, MessageSquare, ChevronRight
 } from "lucide-react";
 import api from "../api/axiosConfig";
+import { ActionCardRenderer } from "../components/ActionCards";
 
 const AIAssistant = () => {
   const navigate = useNavigate();
   const [messages, setMessages] = useState([
     {
       role: "ai",
-      text: "Hello! I'm your AI Medical Assistant powered by ML classification and Groq AI with medical image analysis. I can analyze X-rays, prescriptions, injuries, and skin conditions. Send a message, attach an image, or both!",
-      classification: null
+      text: "Hello! I'm MedSecure AI — your intelligent medical assistant. I can analyse symptoms, book appointments, suggest medications, check insurance, and guide you through the platform. How can I help you today?",
+      classification: null,
+      actionCards: [],
     }
   ]);
   const [input, setInput] = useState("");
@@ -22,6 +24,7 @@ const AIAssistant = () => {
   const [selectedImage, setSelectedImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [sessionInfo, setSessionInfo] = useState({ messageCount: 0, activeIntent: null });
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -150,17 +153,18 @@ const AIAssistant = () => {
     }
   };
 
-  const handleSend = async () => {
-    if (!input.trim() && !selectedImage) return;
-    const cleanInput = input.trim() || (selectedImage ? "Please analyze this medical image." : "");
-    const userMessage = { role: "patient", text: cleanInput, classification: null, imagePreview: imagePreview || null };
-    const historyPayload = messages.slice(-6).map((item) => ({
+  const handleSend = async (overrideMessage = null) => {
+    const textToSend = overrideMessage || input.trim();
+    if (!textToSend && !selectedImage) return;
+    const cleanInput = textToSend || (selectedImage ? "Please analyze this medical image." : "");
+    const userMessage = { role: "patient", text: cleanInput, classification: null, imagePreview: imagePreview || null, actionCards: [] };
+    const historyPayload = messages.slice(-8).map((item) => ({
       role: item.role,
       text: item.text,
     }));
 
     setMessages((prev) => [...prev, userMessage]);
-    setInput("");
+    if (!overrideMessage) setInput("");
     setLoading(true);
 
     try {
@@ -191,6 +195,11 @@ const AIAssistant = () => {
         recommended_action: res.data?.recommendedAction || "self care",
       };
 
+      // Update session info
+      if (res.data?.session) {
+        setSessionInfo(res.data.session);
+      }
+
       setMessages((prev) => [
         ...prev,
         {
@@ -202,7 +211,9 @@ const AIAssistant = () => {
           recommendedAction: res.data?.recommendedAction || classification?.recommended_action,
           fallbackUsed: Boolean(res.data?.fallbackUsed),
           intent: res.data?.intent,
+          intentConfidence: res.data?.intentConfidence,
           action: res.data?.action || null,
+          actionCards: res.data?.actionCards || [],
           // Rich image analysis
           imageAnalysis: res.data?.imageAnalysis || null,
           visualFinding: res.data?.visualFinding || null,
@@ -230,11 +241,19 @@ const AIAssistant = () => {
           symptomTags: fallback.symptomTags,
           recommendedAction: fallback.recommendedAction,
           fallbackUsed: fallback.fallbackUsed,
+          actionCards: [],
         }
       ]);
     }
     clearImage();
     setLoading(false);
+  };
+
+  // Handler for interactive action cards (e.g., "Book Appointment" button sends a message)
+  const handleActionCardMessage = (messageText) => {
+    if (!messageText || loading) return;
+    setInput("");
+    handleSend(messageText);
   };
 
   const handleKeyDown = (e) => {
@@ -246,8 +265,10 @@ const AIAssistant = () => {
 
   const suggestedQuestions = [
     "I've been having headaches for the past few days",
-    "Can I get a refill on my prescription?",
-    "I need to schedule a follow-up appointment",
+    "Book me an appointment in Cardiology",
+    "Show me my upcoming appointments",
+    "What medicine can I take for a fever?",
+    "Tell me about insurance coverage options",
     "I'm experiencing chest pain and shortness of breath",
     "Analyze my X-ray for any abnormalities",
     "I have a rash on my arm — what could it be?"
@@ -289,12 +310,18 @@ const AIAssistant = () => {
               <Sparkles className="w-7 h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">AI Medical Assistant</h1>
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">MedSecure AI Assistant</h1>
               <p className="text-slate-500 text-sm flex items-center gap-2">
-                <Brain className="w-4 h-4" />
-                ML Classification + Groq AI
+                <Zap className="w-4 h-4" />
+                Intent-Aware Universal Assistant
                 <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
                 <span className="text-emerald-600 text-xs font-medium">Active</span>
+                {sessionInfo.activeIntent && (
+                  <span className="ml-2 px-2 py-0.5 text-[10px] rounded-full bg-violet-100 text-violet-600 font-medium flex items-center gap-1">
+                    <MessageSquare className="w-3 h-3" />
+                    {sessionInfo.activeIntent.replace('_', ' ')}
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -484,6 +511,12 @@ const AIAssistant = () => {
                           <Brain className="w-3 h-3" />
                           {(msg.classification.category || 'general_question').replace('_', ' ')}
                         </span>
+                        {msg.intent && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200">
+                            <Zap className="w-3 h-3" />
+                            {(msg.intent || '').replace('_', ' ')}
+                          </span>
+                        )}
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-violet-50 text-violet-600 border border-violet-200">
                           <Sparkles className="w-3 h-3" />
                           {Math.round(msg.classification.confidence * 100)}% confidence
@@ -511,10 +544,10 @@ const AIAssistant = () => {
                             EMERGENCY
                           </span>
                         )}
-                        {msg.recommendAppointment && (
+                        {msg.recommendAppointment && !msg.actionCards?.some(c => c.cardType === 'appointment_suggestion' || c.cardType === 'appointment_booking' || c.cardType === 'appointment_confirmed') && (
                           <button
                             type="button"
-                            onClick={() => { window.location.href = '/appointments'; }}
+                            onClick={() => handleActionCardMessage("I'd like to book an appointment")}
                             className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
                           >
                             <CalendarPlus className="w-3 h-3" />
@@ -524,8 +557,16 @@ const AIAssistant = () => {
                       </motion.div>
                     )}
 
-                    {/* Intent-driven action cards */}
-                    {msg.role === "ai" && msg.action && (
+                    {/* ── NEW: Structured Action Cards from Intent Executor ── */}
+                    {msg.role === "ai" && msg.actionCards && msg.actionCards.length > 0 && (
+                      <ActionCardRenderer
+                        cards={msg.actionCards}
+                        onAction={handleActionCardMessage}
+                      />
+                    )}
+
+                    {/* ── LEGACY: Inline action cards (backward compat) ── */}
+                    {msg.role === "ai" && msg.action && (!msg.actionCards || msg.actionCards.length === 0) && (
                       <motion.div
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -647,7 +688,7 @@ const AIAssistant = () => {
                       </div>
                       <span className="text-xs text-slate-400 ml-2 flex items-center gap-1">
                         <Brain className="w-3 h-3 animate-pulse" />
-                        Analyzing with ML + AI...
+                        Detecting intent & generating response...
                       </span>
                     </div>
                   </div>
@@ -780,7 +821,7 @@ const AIAssistant = () => {
               </motion.button>
             </form>
             <p className="text-[10px] text-slate-400 mt-2 text-center">
-              Supports X-ray, prescription, injury, and skin condition images. Drag & drop or use the buttons above.
+              Universal assistant: symptoms, appointments, medicines, insurance, image analysis. Drag & drop images or type your question.
             </p>
           </div>
         </motion.div>

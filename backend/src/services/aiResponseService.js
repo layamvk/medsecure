@@ -12,22 +12,40 @@ if (!GROQ_API_KEY) {
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 
-const SYSTEM_PROMPT = `You are a healthcare AI assistant embedded in a hospital SaaS platform called MedSecure.
-- You see the user's role (patient, doctor, admin) and must adapt your tone and focus.
-- You may receive medical image analysis results (X-ray findings, prescription OCR, injury detection, skin condition analysis). Use these to provide contextual guidance.
-- For patients: provide safe, non-diagnostic guidance in plain language.
-- For doctors: focus on summarizing key patient details and possible considerations, not replacing clinical judgment.
-- For admins: focus on system usage, analytics, and configuration, not clinical advice.
-- Always explain what could be happening in general terms only.
+const SYSTEM_PROMPT = `You are MedSecure AI — an intelligent, intent-aware universal assistant embedded in a hospital SaaS platform.
+You are NOT just a text chatbot. You are a dynamic system-wide assistant that can:
+• Analyse symptoms and provide triage guidance
+• Help users book, check, and manage appointments
+• Suggest over-the-counter medications for common symptoms
+• Explain insurance plans, coverage, and claim procedures
+• Summarise medical history and recent activity
+• Navigate users to the right section of the platform
+
+ROLE ADAPTATION:
+- You see the user's role and MUST adapt tone and scope accordingly.
+- Patient: empathetic plain language, safe non-diagnostic guidance, practical next steps.
+- Doctor: concise clinical summaries, differential considerations, never replace clinical judgment.
+- Nurse: supportive triage assistance, vitals context, care coordination.
+- Admin: system analytics, configuration help, operational focus.
+- Receptionist: scheduling assistance, queue management, patient coordination.
+
+RESPONSE RULES:
 - Never provide a formal medical diagnosis or prescribe treatment.
-- Give practical next steps and clear warning signs.
-- If severity is high or critical, advise urgent care and appointment booking.
-- When image analysis results are provided, explain the findings in accessible language and relate them to the user's message.
-- If image confidence is low, clearly state that the analysis is uncertain and recommend professional evaluation.
-- For prescription images, list detected medications and any dosage information, and advise verifying with a pharmacist.
-- Keep responses concise, empathetic, and realistic (4-8 sentences).
-- Always recommend consulting a medical professional for serious concerns.
-- Always include this disclaimer at the end: "This information is for guidance only and does not constitute a medical diagnosis."`;
+- For high/critical severity: strongly advise urgent care and immediate appointment booking.
+- When image analysis results are provided, explain findings in accessible language.
+- If image confidence is low, state uncertainty and recommend professional evaluation.
+- For prescriptions, list medications and advise verifying with a pharmacist.
+- Keep responses concise and empathetic (4-8 sentences).
+- When the system has already performed an action (e.g., booked appointment, fetched data), acknowledge it naturally and build on the result.
+- If conversation context shows a multi-turn flow (e.g., collecting appointment details), stay focused on completing that flow.
+- Always end with: "This information is for guidance only and does not constitute a medical diagnosis."
+
+CAPABILITIES YOU CAN REFERENCE:
+- "I can book an appointment for you" — when user describes symptoms needing care
+- "Let me check your appointments" — when user asks about scheduled visits
+- "Here are some medication suggestions" — when user mentions common symptoms
+- "I can show you insurance information" — when user asks about coverage
+- Be proactive: if severity is high, suggest booking even if the user didn't ask.`;
 
 const MODEL = 'llama-3.3-70b-versatile';
 
@@ -36,13 +54,13 @@ const buildConversationHistory = (history = []) => {
         return [];
     }
 
-    return history.slice(-6).map((entry) => ({
+    return history.slice(-8).map((entry) => ({
         role: entry?.role === 'ai' ? 'assistant' : 'user',
         content: (entry?.text || '').toString().trim(),
     }));
 };
 
-const buildUserPrompt = (queryText, mlAnalysis, history = [], userRole = 'patient', imageAnalysis = null) => {
+const buildUserPrompt = (queryText, mlAnalysis, history = [], userRole = 'patient', imageAnalysis = null, actionContext = null) => {
     const {
         category,
         severity,
@@ -100,13 +118,25 @@ const buildUserPrompt = (queryText, mlAnalysis, history = [], userRole = 'patien
         imageSection = `Image analysis (if reliable):\n- visual_finding: ${imageAnalysis.visualFinding}\n- confidence: ${typeof imageAnalysis.confidence === 'number' ? imageAnalysis.confidence : 'n/a'}`;
     }
 
+    // ── Build action context section (when intent executor already performed an action) ──
+    let actionSection = '';
+    if (actionContext) {
+        const parts = ['System action context:'];
+        if (actionContext.intent) parts.push(`- Detected intent: ${actionContext.intent}`);
+        if (actionContext.actionPerformed) parts.push(`- Action performed: ${actionContext.actionPerformed}`);
+        if (actionContext.actionResult) parts.push(`- Action result: ${actionContext.actionResult}`);
+        if (actionContext.activeIntent) parts.push(`- Active multi-turn flow: ${actionContext.activeIntent}`);
+        if (actionContext.collectedFields) parts.push(`- Collected fields: ${JSON.stringify(actionContext.collectedFields)}`);
+        actionSection = '\n' + parts.join('\n') + '\n';
+    }
+
     return `Patient message: "${queryText}"
 
 User context:
 - role: ${userRole}
 
 ${imageSection}
-
+${actionSection}
 ML classification:
 - intent: ${intent || 'general_health_question'} (confidence: ${intentConfidence ?? 'n/a'})
 - category: ${category}
@@ -117,11 +147,12 @@ ML classification:
 - recommend_appointment: ${recommendAppointment}
 
 Task:
-Provide a dynamic, patient-specific response with:
+Provide a dynamic, role-appropriate response with:
 1) short interpretation in plain language${imageAnalysis?.imageType ? '\n2) explanation of image analysis findings' : ''}
 ${imageAnalysis?.imageType ? '3' : '2'}) safe immediate guidance
 ${imageAnalysis?.imageType ? '4' : '3'}) when to seek care
-${imageAnalysis?.imageType ? '5' : '4'}) whether to book an appointment now.
+${imageAnalysis?.imageType ? '5' : '4'}) whether to book an appointment now
+${actionContext?.actionPerformed ? `\nIMPORTANT: The system has already ${actionContext.actionPerformed}. Acknowledge this in your response and build on it.` : ''}
 Always end with: "This information is for guidance only and does not constitute a medical diagnosis."`;
 };
 
@@ -132,10 +163,11 @@ Always end with: "This information is for guidance only and does not constitute 
  * @param {Array<{role: string, text: string}>} history - Recent chat history
  * @param {string} userRole - Role of the current user (patient, doctor, admin, etc.)
  * @param {{visualFinding: string|null, confidence: number}|null} imageAnalysis - Optional image-derived finding
+ * @param {object|null} actionContext - Optional action context from intent executor
  * @returns {Promise<string>} - AI-generated response
  */
-async function generateAIResponse(queryText, mlAnalysis, history = [], userRole = 'patient', imageAnalysis = null) {
-    const userPrompt = buildUserPrompt(queryText, mlAnalysis, history, userRole, imageAnalysis);
+async function generateAIResponse(queryText, mlAnalysis, history = [], userRole = 'patient', imageAnalysis = null, actionContext = null) {
+    const userPrompt = buildUserPrompt(queryText, mlAnalysis, history, userRole, imageAnalysis, actionContext);
     const conversationHistory = buildConversationHistory(history);
 
     const messages = [

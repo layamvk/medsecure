@@ -2,7 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const { generateAIResponse } = require('../services/aiResponseService');
 const { analyzeQuery } = require('../services/mlClassifier');
-const { getAppointmentsForUser, bookAppointmentForUser } = require('../controllers/appointmentController');
+const { executeIntent, getRoleContext } = require('../services/intentActionExecutor');
+const { addMessage, getHistory, getActiveIntent, setActiveIntent, clearActiveIntent, updateCollectedFields, getSessionMeta } = require('../services/conversationMemory');
 const { analyzeImage } = require('../services/imageAnalysisService');
 const { protect } = require('../middleware/auth');
 
@@ -23,6 +24,7 @@ const upload = multer({
 });
 
 // Helper: format appointments into a short human summary
+// (Kept for backward compat — main logic now in intentActionExecutor)
 const summariseAppointments = (appointments = []) => {
   if (!appointments.length) {
     return 'You have no upcoming appointments in the system.';
@@ -40,64 +42,8 @@ const summariseAppointments = (appointments = []) => {
   return `Here are your upcoming appointments:\n${lines.join('\n')}`;
 };
 
-// Helper: very simple extraction of appointment details from text/history
-const extractAppointmentDetails = (message, history = []) => {
-  const combined = [
-    ...history.filter((h) => h && h.role === 'patient' && typeof h.text === 'string').map((h) => h.text),
-    message,
-  ]
-    .join(' ') // single text
-    .toLowerCase();
-
-  // Department keywords
-  const departments = ['cardiology', 'neurology', 'pediatrics', 'general medicine', 'internal medicine'];
-  let department = departments.find((d) => combined.includes(d));
-
-  // Date: simple ISO-like pattern or today/tomorrow
-  let dateMatch = combined.match(/(\d{4}-\d{2}-\d{2})/);
-  let date;
-  if (dateMatch) {
-    date = dateMatch[1];
-  } else if (combined.includes('tomorrow')) {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    date = d.toISOString().slice(0, 10);
-  } else if (combined.includes('today')) {
-    const d = new Date();
-    date = d.toISOString().slice(0, 10);
-  }
-
-  // Time: HH:MM 24h or mentions like "10am"
-  let timeMatch = combined.match(/\b(\d{1,2}:\d{2})\b/);
-  let time = timeMatch ? timeMatch[1] : undefined;
-
-  if (!time) {
-    const alt = combined.match(/\b(\d{1,2})\s?(am|pm)\b/);
-    if (alt) {
-      let hour = parseInt(alt[1], 10);
-      const suffix = alt[2];
-      if (suffix === 'pm' && hour < 12) hour += 12;
-      if (suffix === 'am' && hour === 12) hour = 0;
-      time = `${hour.toString().padStart(2, '0')}:00`;
-    }
-  }
-
-  const missingFields = [];
-  if (!department) missingFields.push('department');
-  if (!date) missingFields.push('date');
-  if (!time) missingFields.push('time');
-
-  return {
-    department,
-    date,
-    time,
-    missingFields,
-    isComplete: missingFields.length === 0,
-  };
-};
-
-// POST /api/ai/chat — General AI chat (authenticated)
-// Accepts JSON or multipart/form-data with optional image field `image`.
+// POST /api/ai/chat — Universal AI Assistant (authenticated)
+// Pipeline: ML classify → intent detect → action executor → Groq AI → structured response
 router.post('/chat', protect, upload.single('image'), async (req, res) => {
   let { message, history } = req.body || {};
 
@@ -114,115 +60,187 @@ router.post('/chat', protect, upload.single('image'), async (req, res) => {
     parsedHistory = history;
   }
 
-  console.log('AI /chat incoming message:', message);
+  console.log('[AI CHAT] ═══════════════════════════════════════');
+  console.log('[AI CHAT] Incoming message:', message);
 
-  // Allow image-only submissions (no text required when image is provided)
+  // Allow image-only submissions
   if (!message && !req.file) {
     return res.status(400).json({ error: 'Message or image is required' });
   }
-
-  // Default message when only an image is sent
   if (!message && req.file) {
     message = 'Please analyze this medical image.';
   }
 
   try {
-    // 1. Run ML classifier
-    const mlAnalysis = analyzeQuery(message);
-    console.log('AI /chat ML classification:', mlAnalysis);
-
-    const safeHistory = Array.isArray(parsedHistory)
-      ? parsedHistory.filter((item) => item && typeof item.text === 'string' && typeof item.role === 'string').slice(-8)
-      : [];
-
+    const userId = req.user?._id || req.user?.id || 'anonymous';
     const userRole = req.user?.role || 'patient';
 
-    // Optional image analysis
+    // ─── 1. Conversation Memory: store user message & get session history ───
+    addMessage(userId, 'patient', message);
+    const memoryHistory = getHistory(userId, 8);
+    const sessionMeta = getSessionMeta(userId);
+
+    // Merge frontend history with server memory (prefer server memory)
+    const safeHistory = memoryHistory.length > 0
+      ? memoryHistory
+      : (Array.isArray(parsedHistory)
+        ? parsedHistory.filter((item) => item && typeof item.text === 'string' && typeof item.role === 'string').slice(-8)
+        : []);
+
+    // ─── 2. ML Classification ──────────────────────────────────────────────
+    const mlAnalysis = analyzeQuery(message);
+    console.log('[AI CHAT] ML classification:', JSON.stringify({
+      intent: mlAnalysis.intent,
+      severity: mlAnalysis.severity,
+      category: mlAnalysis.category,
+      confidence: mlAnalysis.confidence,
+    }));
+
+    // ─── 3. Check for active multi-turn intent ────────────────────────────
+    const { intent: activeIntent, collectedFields } = getActiveIntent(userId);
+    let resolvedIntent = mlAnalysis.intent || 'general_health_question';
+
+    // If there's an active multi-turn flow (e.g., booking), continue it
+    // unless the user clearly changed intent
+    if (activeIntent && mlAnalysis.intentConfidence < 0.8) {
+      resolvedIntent = activeIntent;
+      console.log('[AI CHAT] Continuing multi-turn flow:', activeIntent);
+    } else if (activeIntent && resolvedIntent !== activeIntent) {
+      // User changed intent — clear the old flow
+      clearActiveIntent(userId);
+      console.log('[AI CHAT] Intent changed from', activeIntent, 'to', resolvedIntent);
+    }
+
+    // ─── 4. Optional image analysis ────────────────────────────────────────
     let imageAnalysis = null;
     if (req.file) {
       try {
         imageAnalysis = await analyzeImage(req.file);
-        console.log('AI /chat image analysis:', imageAnalysis);
+        console.log('[AI CHAT] Image analysis:', imageAnalysis?.imageType || 'none');
       } catch (imgErr) {
-        console.error('Image analysis failed:', imgErr?.message || imgErr);
+        console.error('[AI CHAT] Image analysis failed:', imgErr?.message || imgErr);
         imageAnalysis = null;
       }
     }
 
-    // 2. Decide intent-driven system action or AI response
-    // When an image is present, always use Groq AI to explain the findings
-    const intent = mlAnalysis.intent || 'general_health_question';
+    // ─── 5. Intent Action Executor ─────────────────────────────────────────
+    // When an image is present, skip system actions and go straight to AI
     const hasImage = imageAnalysis && imageAnalysis.imageType;
-    let aiResponse;
-    let action = null;
-    let fallbackUsed = false;
+    let intentResult = { responseText: null, action: null, actionCards: [], needsAI: true, roleContext: getRoleContext(userRole), intent: resolvedIntent };
 
-    try {
-      if (!hasImage && intent === 'check_appointment') {
-        const appointments = await getAppointmentsForUser(req.user);
-        aiResponse = summariseAppointments(appointments);
-        action = { type: 'SHOW_APPOINTMENTS', appointments };
-      } else if (!hasImage && intent === 'book_appointment') {
-        const details = extractAppointmentDetails(message, safeHistory);
-        if (!details.isComplete) {
-          aiResponse = 'I can help you book an appointment. Please tell me the department (for example, Cardiology), the date (YYYY-MM-DD), and your preferred time (HH:MM).';
-          action = {
-            type: 'APPOINTMENT_FLOW',
-            stage: 'collect_info',
-            missingFields: details.missingFields,
-          };
-        } else {
-          // Use a generic doctor name when none is given; staff can refine later.
-          const payload = {
-            doctorName: `${details.department} clinic`,
-            department: details.department,
-            date: details.date,
-            time: details.time,
-            reason: message,
-          };
-          const result = await bookAppointmentForUser(req.user, payload);
-          aiResponse = `Your appointment has been booked with the ${details.department} clinic on ${details.date} at ${details.time}. You will see it in your appointments list.`;
-          action = { type: 'APPOINTMENT_CREATED', appointment: result.appointment };
+    if (!hasImage) {
+      try {
+        intentResult = await executeIntent({
+          intent: resolvedIntent,
+          message,
+          mlAnalysis,
+          user: req.user,
+          history: safeHistory,
+        });
+        console.log('[AI CHAT] Intent executor result:', {
+          intent: intentResult.intent,
+          needsAI: intentResult.needsAI,
+          actionCards: intentResult.actionCards.length,
+          hasAction: !!intentResult.action,
+        });
+
+        // Track multi-turn flows
+        if (intentResult.action?.type === 'APPOINTMENT_FLOW') {
+          setActiveIntent(userId, 'book_appointment', intentResult.action.missingFields ? {} : {});
+        } else if (intentResult.action?.type === 'APPOINTMENT_CREATED') {
+          clearActiveIntent(userId);
         }
-      } else if (!hasImage && intent === 'buy_medicine') {
-        aiResponse = 'I can help you with medicines. I will open the medicine store where you can review and request medications recommended by your clinician.';
-        action = { type: 'NAVIGATE', target: '/medicine-store', reason: 'buy_medicine' };
-      } else if (!hasImage && intent === 'insurance_info') {
-        aiResponse = 'You can review your insurance and billing details in the Insurance section. I will open the relevant page so you can check coverage and recent claims.';
-        action = { type: 'NAVIGATE', target: '/insurance', reason: 'insurance_info' };
-      } else {
-        // Symptom/general health questions go through Groq AI
-        aiResponse = await generateAIResponse(message, mlAnalysis, safeHistory, userRole, imageAnalysis);
+      } catch (intentErr) {
+        console.error('[AI CHAT] Intent executor error:', intentErr?.message);
+        intentResult.needsAI = true;
       }
-    } catch (err) {
-      console.error('[AI ROUTE] Error in intent/action handling:', err?.message || err);
-      return res.status(502).json({
-        error: 'AI response generation failed. Please try again.',
-        details: err?.message || 'Unknown error',
-        classification: {
-          category: mlAnalysis.category,
-          severity: mlAnalysis.severity,
-          confidence: mlAnalysis.confidence,
-        },
-      });
     }
 
-    const recommendAppointment = Boolean(mlAnalysis.recommendAppointment || mlAnalysis.severity === 'high' || mlAnalysis.severity === 'critical');
+    // ─── 6. Groq AI Response (when needed) ─────────────────────────────────
+    let aiResponse = intentResult.responseText;
+    let fallbackUsed = false;
+
+    if (intentResult.needsAI || hasImage) {
+      try {
+        // Build action context for AI
+        const actionContext = {
+          intent: resolvedIntent,
+          actionPerformed: intentResult.action?.type ? `${intentResult.action.type} action` : null,
+          actionResult: intentResult.responseText || null,
+          activeIntent: activeIntent || null,
+          collectedFields: collectedFields || null,
+        };
+
+        const groqResponse = await generateAIResponse(
+          message,
+          mlAnalysis,
+          safeHistory,
+          userRole,
+          imageAnalysis,
+          actionContext,
+        );
+
+        // If intent executor already has text, combine; otherwise use AI response
+        if (aiResponse) {
+          aiResponse = `${aiResponse}\n\n${groqResponse}`;
+        } else {
+          aiResponse = groqResponse;
+        }
+      } catch (aiErr) {
+        console.error('[AI CHAT] Groq AI error:', aiErr?.message || aiErr);
+        if (!aiResponse) {
+          fallbackUsed = true;
+          aiResponse = 'I apologise — I was unable to generate a full response right now. Please try again in a moment.';
+        }
+      }
+    }
+
+    // ─── 7. Store AI response in conversation memory ───────────────────────
+    addMessage(userId, 'ai', aiResponse, {
+      intent: resolvedIntent,
+      severity: mlAnalysis.severity,
+    });
+
+    // ─── 8. Build structured response ──────────────────────────────────────
+    const recommendAppointment = Boolean(
+      mlAnalysis.recommendAppointment ||
+      mlAnalysis.severity === 'high' ||
+      mlAnalysis.severity === 'critical'
+    );
 
     const responsePayload = {
+      // ── Core response ──
       responseText: aiResponse,
       aiResponse,
       response: aiResponse,
-      intent,
+
+      // ── Intent & classification metadata ──
+      intent: resolvedIntent,
+      intentConfidence: mlAnalysis.intentConfidence,
       category: mlAnalysis.category,
       severity: mlAnalysis.severity,
       confidence: mlAnalysis.confidence,
       recommendedAction: mlAnalysis.recommendedAction,
       recommendAppointment,
       symptomTags: mlAnalysis.symptomTags || [],
+      emergencyDetected: mlAnalysis.emergencyDetected || false,
       fallbackUsed,
-      action,
-      // Rich image analysis fields
+
+      // ── System action result ──
+      action: intentResult.action,
+      actionCards: intentResult.actionCards,
+
+      // ── Conversation session metadata ──
+      session: {
+        messageCount: sessionMeta?.messageCount || 0,
+        activeIntent: sessionMeta?.activeIntent || null,
+        historyLength: sessionMeta?.historyLength || 0,
+      },
+
+      // ── Role context ──
+      roleContext: intentResult.roleContext,
+
+      // ── Rich image analysis fields ──
       imageAnalysis: imageAnalysis || null,
       visualFinding: imageAnalysis?.visualFinding || null,
       visualConfidence: typeof imageAnalysis?.confidence === 'number' ? imageAnalysis.confidence : null,
@@ -234,6 +252,8 @@ router.post('/chat', protect, upload.single('image'), async (req, res) => {
       imageDosageSummary: imageAnalysis?.dosageSummary || null,
       imageInstructions: imageAnalysis?.instructions || null,
       imageDetails: imageAnalysis?.details || null,
+
+      // ── Full classification object ──
       classification: {
         category: mlAnalysis.category,
         severity: mlAnalysis.severity,
@@ -244,12 +264,13 @@ router.post('/chat', protect, upload.single('image'), async (req, res) => {
         recommended_action: mlAnalysis.recommended_action,
         recommendAppointment,
         symptomTags: mlAnalysis.symptomTags || [],
-        intent,
+        intent: resolvedIntent,
         intentConfidence: mlAnalysis.intentConfidence,
         imageAnalysis: imageAnalysis || null,
       },
     };
 
+    console.log('[AI CHAT] Response sent — intent:', resolvedIntent, '| cards:', intentResult.actionCards.length, '| severity:', mlAnalysis.severity);
     res.json(responsePayload);
   } catch (error) {
     console.error('Error in AI chat endpoint:', error);
