@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
     Users, MessageSquare, Clock, AlertTriangle, 
     Sparkles, Activity, Calendar, TrendingUp,
-    ArrowRight, Bell, Brain, Shield, Zap, Stethoscope, FileText, BarChart3, Settings
+    ArrowRight, Bell, Brain, Shield, Zap, Stethoscope, FileText, BarChart3, Settings, CheckCircle
 } from 'lucide-react';
 import api from '../api/axiosConfig';
 import { useAuth } from '../context/AuthContext';
@@ -55,7 +55,7 @@ const QUICK_ACTIONS_BY_ROLE = {
 export default function Dashboard() {
     const { role } = useAuth();
     const quickActions = QUICK_ACTIONS_BY_ROLE[role] || QUICK_ACTIONS_BY_ROLE.Doctor;
-    const primaryActionPath = { Admin: '/admin-dashboard', Doctor: '/staff/queries', Nurse: '/staff/queries', Receptionist: '/staff/queries', Patient: '/patient/queries' }[role] || '/staff/queries';
+    const primaryActionPath = { Admin: '/admin-dashboard', Doctor: '/staff/queries', Nurse: '/staff/queries', Receptionist: '/staff/queries', Patient: '/patient/new-query' }[role] || '/staff/queries';
     const [stats, setStats] = useState(fallbackStats);
     const [activity, setActivity] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -81,14 +81,23 @@ export default function Dashboard() {
                         api.get('/queries').catch(() => ({ data: [] })),
                         api.get('/patients').catch(() => ({ data: [] }))
                     ]);
-                    const queries = Array.isArray(queriesRes.data) ? queriesRes.data : [];
+                                const queries = Array.isArray(queriesRes.data) ? queriesRes.data : [];
                     const patients = Array.isArray(patientsRes.data) ? patientsRes.data : [];
-                    setStats({
-                        totalPatients: patients.length,
-                        activeQueries: queries.filter(q => q.status !== 'closed').length,
-                        pendingReview: queries.filter(q => q.status === 'open' || q.status === 'triaged').length,
-                        urgentAlerts: queries.filter(q => q.priority === 'critical').length
-                    });
+                    if (role === 'Patient') {
+                        setStats({
+                            totalPatients: queries.length,
+                            activeQueries: queries.filter(q => q.status === 'open' || q.status === 'triaged' || q.status === 'in_progress').length,
+                            pendingReview: 0,
+                            urgentAlerts: queries.filter(q => q.status === 'responded').length,
+                        });
+                    } else {
+                        setStats({
+                            totalPatients: patients.length,
+                            activeQueries: queries.filter(q => q.status !== 'closed').length,
+                            pendingReview: queries.filter(q => q.status === 'open' || q.status === 'triaged').length,
+                            urgentAlerts: queries.filter(q => q.priority === 'critical').length
+                        });
+                    }
                 }
 
                 // Activity
@@ -145,7 +154,12 @@ export default function Dashboard() {
         }
     };
 
-    const statCards = [
+    const statCards = role === 'Patient' ? [
+        { label: 'My Queries', value: stats.totalPatients, icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50', trend: null },
+        { label: 'Awaiting Response', value: stats.activeQueries, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', trend: null },
+        { label: 'Upcoming Apts.', value: stats.pendingReview, icon: Calendar, color: 'text-emerald-600', bg: 'bg-emerald-50', trend: null },
+        { label: 'Responses Received', value: stats.urgentAlerts, icon: CheckCircle, color: 'text-violet-600', bg: 'bg-violet-50', trend: null },
+    ] : [
         { label: 'Total Patients', value: stats.totalPatients, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', trend: null },
         { label: 'Active Queries', value: stats.activeQueries, icon: MessageSquare, color: 'text-violet-600', bg: 'bg-violet-50', trend: null },
         { label: 'Pending Review', value: stats.pendingReview, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', trend: null },
@@ -192,8 +206,12 @@ export default function Dashboard() {
                     transition={{ duration: 0.5 }}
                     className="mb-8"
                 >
-                    <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Welcome to MedSecure</h1>
-                    <p className="text-slate-500 mt-1">AI-powered healthcare communication platform</p>
+                    <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+                        {role === 'Patient' ? `Welcome, ${user?.name?.split(' ')[0] || 'Patient'}` : 'Welcome to MedSecure'}
+                    </h1>
+                    <p className="text-slate-500 mt-1">
+                        {role === 'Patient' ? 'Manage your queries, appointments, and health records.' : 'AI-powered healthcare communication platform'}
+                    </p>
                 </motion.div>
 
                 {/* Stats Grid */}
@@ -291,8 +309,14 @@ export default function Dashboard() {
                                     <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-4">
                                         <Sparkles className="w-6 h-6" />
                                     </div>
-                                    <h3 className="text-xl font-bold mb-2">AI Response Assistant</h3>
-                                    <p className="text-white/80 text-sm mb-4">Generate intelligent draft responses for patient queries with our ML-powered assistant.</p>
+                                    <h3 className="text-xl font-bold mb-2">
+                                        {role === 'Patient' ? 'AI Health Assistant' : 'AI Response Assistant'}
+                                    </h3>
+                                    <p className="text-white/80 text-sm mb-4">
+                                        {role === 'Patient'
+                                            ? 'Ask our AI about symptoms, medications, or health concerns — get instant, informed answers.'
+                                            : 'Generate intelligent draft responses for patient queries with our ML-powered assistant.'}
+                                    </p>
                                     <Link
                                         to={primaryActionPath}
                                         className="inline-flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-sm font-medium transition-colors"

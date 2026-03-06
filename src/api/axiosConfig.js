@@ -31,6 +31,11 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Strip leading slash so paths resolve correctly against baseURL
+    // e.g. '/queries' → 'queries' → 'http://localhost:3001/api/queries'
+    if (config.url && config.url.startsWith('/') && !config.url.startsWith('//')) {
+      config.url = config.url.slice(1);
+    }
     return config;
   },
   (error) => {

@@ -42,6 +42,7 @@ const NAV_ITEMS = {
         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
         { label: 'Submit Query', path: '/patient/new-query', icon: FileText },
         { label: 'My Queries', path: '/patient/queries', icon: MessageSquare },
+        { label: 'My Records', path: '/patient/records', icon: Activity },
         { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles },
         { label: 'X-Ray Analysis', path: '/xray-analysis', icon: ScanLine },
         { label: 'Appointments', path: '/appointments', icon: Calendar },

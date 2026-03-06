@@ -1,7 +1,7 @@
 import axios from "axios";
 
 export const api = axios.create({
-    baseURL: "http://localhost:3001/api",
+    baseURL: "http://localhost:3001/api/",
     headers: {
         "Content-Type": "application/json"
     },
@@ -13,6 +13,11 @@ api.interceptors.request.use((config) => {
 
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    // Strip leading slash so paths resolve correctly against baseURL
+    if (config.url && config.url.startsWith('/') && !config.url.startsWith('//')) {
+        config.url = config.url.slice(1);
     }
 
     return config;

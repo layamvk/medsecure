@@ -65,7 +65,7 @@ const PatientDashboard = () => {
             <div className="flex items-end justify-between mb-4 border-b border-[var(--color-border)] pb-4">
                 <div>
                     <h1 className="text-2xl font-black tracking-tight text-[var(--color-text-primary)] uppercase">Patient Portal</h1>
-                    <p className="text-[var(--color-text-secondary)] text-xs font-bold uppercase tracking-wider mt-1">Welcome: {user.name} // Patient ID: PT-5731 // Access Level: Personal Records</p>
+                    <p className="text-[var(--color-text-secondary)] text-xs font-bold uppercase tracking-wider mt-1">Welcome: {user?.name || 'Patient'} // Patient ID: PT-5731 // Access Level: Personal Records</p>
                 </div>
             </div>
 

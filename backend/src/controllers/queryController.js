@@ -80,7 +80,9 @@ const createQuery = async (req, res) => {
 
 const getQueries = async (req, res) => {
     try {
-        const queries = await Query.find()
+        // Patients only see their own queries; staff see all
+        const filter = req.user.role === 'patient' ? { patientId: req.user._id } : {};
+        const queries = await Query.find(filter)
             .populate('assignedTo', 'name role')
             .populate('responses.responderId', 'name role')
             .populate('patientId', 'name email')
