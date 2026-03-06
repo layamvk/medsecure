@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, Clock, User, Plus, CheckCircle, X, Building2, Stethoscope } from "lucide-react";
+import { Calendar, Clock, User, Plus, CheckCircle, X, Building2, Stethoscope, Brain, Zap, AlertTriangle, Activity, Sparkles } from "lucide-react";
 import api from "../api/axiosConfig";
 import toast from "react-hot-toast";
+import { useRealTimeAppointments } from "../hooks/useSocket";
+import CriticalAlertBanner from "../components/CriticalAlertBanner";
 
 const FALLBACK_DOCTORS = [
   { _id: 'doc-1', firstName: 'Evelyn', lastName: 'Reed', department: 'Cardiology' },
@@ -14,7 +16,7 @@ const FALLBACK_DOCTORS = [
 
 const AppointmentBooking = () => {
   const [doctors, setDoctors] = useState([]);
-  const [appointments, setAppointments] = useState([]);
+  const [initialAppointments, setInitialAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [bookSuccess, setBookSuccess] = useState(false);
@@ -23,6 +25,15 @@ const AppointmentBooking = () => {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [reason, setReason] = useState('');
+  const [symptomDescription, setSymptomDescription] = useState('');
+
+  // AI suggestion state
+  const [aiSuggestion, setAiSuggestion] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [urgencyData, setUrgencyData] = useState(null);
+
+  // Real-time Socket.IO hook
+  const { appointments, setAppointments, criticalAlerts, clearAlert } = useRealTimeAppointments(initialAppointments);
 
   // Load doctors and existing appointments
   useEffect(() => {
@@ -36,6 +47,7 @@ const AppointmentBooking = () => {
         setDoctors(docList);
         setSelectedDoctor(docList[0] ? `${docList[0].firstName} ${docList[0].lastName}` : '');
         setAppointments(apptRes.data || []);
+        setInitialAppointments(apptRes.data || []);
       } catch {
         setDoctors(FALLBACK_DOCTORS);
         setSelectedDoctor('Dr. Evelyn Reed');
@@ -45,6 +57,46 @@ const AppointmentBooking = () => {
     };
     fetchData();
   }, []);
+
+  // Fetch AI suggestion when symptoms change (debounced)
+  useEffect(() => {
+    if (!symptomDescription || symptomDescription.trim().length < 5) {
+      setAiSuggestion(null);
+      setUrgencyData(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setAiLoading(true);
+      try {
+        const res = await api.post('/appointments/suggest', { symptomDescription });
+        if (res.data?.suggestion) {
+          setAiSuggestion(res.data.suggestion);
+          setUrgencyData(res.data.urgency);
+        }
+      } catch {
+        // Silently fail — suggestion is optional
+        setAiSuggestion(null);
+      } finally {
+        setAiLoading(false);
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [symptomDescription]);
+
+  // Accept AI suggestion
+  const acceptSuggestion = () => {
+    if (!aiSuggestion) return;
+    // Find matching doctor
+    const suggestedName = aiSuggestion.recommendedDoctor?.replace(/^Dr\.\s*/, '') || '';
+    const matchDoc = doctors.find(d => `${d.firstName} ${d.lastName}` === suggestedName || aiSuggestion.recommendedDoctor?.includes(d.lastName));
+    if (matchDoc) {
+      setSelectedDoctor(`${matchDoc.firstName} ${matchDoc.lastName}`);
+    }
+    if (aiSuggestion.recommendedTime && aiSuggestion.recommendedTime !== 'ASAP') {
+      setTime(aiSuggestion.recommendedTime);
+    }
+    toast.success('AI suggestion applied!');
+  };
 
   const handleBook = async (e) => {
     e.preventDefault();
@@ -62,6 +114,7 @@ const AppointmentBooking = () => {
         date,
         time,
         reason,
+        symptomDescription,
         doctorId: doc?._id || null
       });
 
@@ -84,6 +137,9 @@ const AppointmentBooking = () => {
         setDate('');
         setTime('');
         setReason('');
+        setSymptomDescription('');
+        setAiSuggestion(null);
+        setUrgencyData(null);
         setBookSuccess(false);
       }, 2000);
     } catch (err) {
@@ -95,6 +151,7 @@ const AppointmentBooking = () => {
         date,
         time,
         reason,
+        symptomDescription,
         status: 'scheduled',
         createdAt: new Date().toISOString()
       };
@@ -105,6 +162,9 @@ const AppointmentBooking = () => {
         setDate('');
         setTime('');
         setReason('');
+        setSymptomDescription('');
+        setAiSuggestion(null);
+        setUrgencyData(null);
         setBookSuccess(false);
       }, 2000);
     } finally {
@@ -125,16 +185,31 @@ const AppointmentBooking = () => {
 
   const getStatusColor = (status) => {
     switch (status) {
+      case 'pending': return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'scheduled': return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'confirmed': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'in-progress': return 'bg-violet-50 text-violet-700 border-violet-200';
       case 'completed': return 'bg-slate-100 text-slate-600 border-slate-200';
       case 'cancelled': return 'bg-red-50 text-red-600 border-red-200';
       default: return 'bg-slate-100 text-slate-600 border-slate-200';
     }
   };
 
+  const getUrgencyColor = (level) => {
+    switch (level) {
+      case 'critical': return 'bg-red-500 text-white';
+      case 'high': return 'bg-orange-500 text-white';
+      case 'medium': return 'bg-yellow-500 text-white';
+      case 'low': return 'bg-green-500 text-white';
+      default: return 'bg-slate-400 text-white';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 py-8 px-6">
+      {/* Critical Alert Banner */}
+      <CriticalAlertBanner alerts={criticalAlerts} onDismiss={clearAlert} />
+
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
@@ -228,6 +303,89 @@ const AppointmentBooking = () => {
                     placeholder="Brief description of visit..."
                   />
                 </div>
+
+                {/* Symptom Description for AI analysis */}
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 block">
+                    <Brain className="w-3.5 h-3.5 inline mr-1" />
+                    Describe Symptoms (AI Analysis)
+                  </label>
+                  <textarea
+                    rows="3"
+                    className="w-full px-4 py-3 bg-slate-50/80 border border-slate-200/60 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all resize-none"
+                    value={symptomDescription}
+                    onChange={(e) => setSymptomDescription(e.target.value)}
+                    placeholder="Describe your symptoms for AI-powered doctor recommendation..."
+                  />
+                  {aiLoading && (
+                    <div className="flex items-center gap-2 mt-2 text-xs text-violet-600">
+                      <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                      AI analyzing symptoms...
+                    </div>
+                  )}
+                </div>
+
+                {/* AI Suggestion Panel */}
+                <AnimatePresence>
+                  {aiSuggestion && !aiLoading && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200/60 rounded-2xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-violet-600" />
+                            <span className="text-xs font-bold text-violet-700 uppercase tracking-wider">AI Recommendation</span>
+                          </div>
+                          {urgencyData && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getUrgencyColor(urgencyData.urgencyLevel)}`}>
+                              {urgencyData.urgencyLevel?.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <Stethoscope className="w-3.5 h-3.5 text-violet-500" />
+                            <span className="text-slate-700"><strong>Doctor:</strong> {aiSuggestion.recommendedDoctor}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Building2 className="w-3.5 h-3.5 text-violet-500" />
+                            <span className="text-slate-700"><strong>Dept:</strong> {aiSuggestion.recommendedDepartment}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-3.5 h-3.5 text-violet-500" />
+                            <span className="text-slate-700"><strong>Time:</strong> {aiSuggestion.recommendedTime}</span>
+                          </div>
+                          {aiSuggestion.reasoning && (
+                            <p className="text-xs text-slate-500 italic mt-1">{aiSuggestion.reasoning}</p>
+                          )}
+                          {urgencyData?.symptomTags?.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {urgencyData.symptomTags.map((tag, i) => (
+                                <span key={i} className="text-[10px] bg-violet-100 text-violet-600 px-2 py-0.5 rounded-full font-medium">{tag}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <motion.button
+                          type="button"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={acceptSuggestion}
+                          className="w-full py-2 rounded-xl bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700 transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          Accept AI Suggestion
+                        </motion.button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 <AnimatePresence mode="wait">
                   {bookSuccess ? (
@@ -334,6 +492,12 @@ const AppointmentBooking = () => {
                           <span className={`px-3 py-1.5 text-xs font-semibold rounded-xl border capitalize ${getStatusColor(appt.status)}`}>
                             {appt.status}
                           </span>
+                          {appt.urgencyLevel && appt.urgencyLevel !== 'low' && (
+                            <span className={`px-2 py-1 text-[10px] font-bold rounded-lg ${getUrgencyColor(appt.urgencyLevel)}`}>
+                              {appt.urgencyLevel === 'critical' && <AlertTriangle className="w-3 h-3 inline mr-0.5" />}
+                              {appt.urgencyLevel.toUpperCase()}
+                            </span>
+                          )}
                           {appt.status === 'scheduled' && (
                             <button
                               onClick={() => handleCancel(appt._id)}

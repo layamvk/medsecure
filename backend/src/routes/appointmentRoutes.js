@@ -4,7 +4,9 @@ const {
     createAppointment,
     updateAppointment,
     cancelAppointment,
-    getDoctors
+    getDoctors,
+    getAISuggestion,
+    getPriorityQueue
 } = require('../controllers/appointmentController');
 const { protect } = require('../middleware/auth');
 
@@ -15,6 +17,12 @@ router.use(protect);
 
 // Doctors list (for booking form)
 router.get('/doctors', getDoctors);
+
+// AI-powered suggestion
+router.post('/suggest', getAISuggestion);
+
+// Priority queue (admin/doctor)
+router.get('/priority-queue', getPriorityQueue);
 
 // CRUD
 router.get('/', getAppointments);

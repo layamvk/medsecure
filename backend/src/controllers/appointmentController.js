@@ -1,5 +1,7 @@
 const Appointment = require('../models/Appointment');
 const { User, AuditLog } = require('../models');
+const { classifyUrgency, generateAppointmentSuggestion } = require('../services/appointmentAIService');
+const { emitAppointmentCreated, emitAppointmentUpdated, emitCriticalAlert } = require('../config/socket');
 
 // In-memory store for mock mode
 const mockAppointments = [];
@@ -62,13 +64,17 @@ const getAppointments = async (req, res) => {
 
 // Internal helper: book an appointment for a user (used by controller and AI assistant)
 const bookAppointmentForUser = async (user, payload) => {
-    const { doctorName, department, date, time, reason, doctorId } = payload;
+    const { doctorName, department, date, time, reason, doctorId, symptomDescription } = payload;
 
     if (!doctorName || !department || !date || !time) {
         const error = new Error('doctorName, department, date, and time are required');
         error.statusCode = 400;
         throw error;
     }
+
+    // ── AI urgency classification ──
+    const textForAnalysis = symptomDescription || reason || '';
+    const urgencyData = classifyUrgency(textForAnalysis);
 
     if (global.useMockDB) {
         const appt = {
@@ -80,11 +86,21 @@ const bookAppointmentForUser = async (user, payload) => {
             date: new Date(date).toISOString(),
             time,
             reason: reason || '',
+            symptomDescription: symptomDescription || '',
+            urgencyLevel: urgencyData.urgencyLevel,
+            urgencyScore: urgencyData.urgencyScore,
             status: 'scheduled',
             createdAt: new Date().toISOString(),
         };
         mockAppointments.push(appt);
-        return { success: true, message: 'Appointment booked successfully', appointment: appt };
+
+        // Emit real-time events even in mock mode
+        try { emitAppointmentCreated(appt); } catch (_e) { /* socket not ready */ }
+        if (urgencyData.urgencyLevel === 'critical' || urgencyData.urgencyLevel === 'high') {
+            try { emitCriticalAlert(appt, urgencyData); } catch (_e) { /* socket not ready */ }
+        }
+
+        return { success: true, message: 'Appointment booked successfully', appointment: appt, urgency: urgencyData };
     }
 
     const appointment = await Appointment.create({
@@ -95,6 +111,9 @@ const bookAppointmentForUser = async (user, payload) => {
         date: new Date(date),
         time,
         reason: reason || '',
+        symptomDescription: symptomDescription || '',
+        urgencyLevel: urgencyData.urgencyLevel,
+        urgencyScore: urgencyData.urgencyScore,
         status: 'scheduled',
     });
 
@@ -104,9 +123,18 @@ const bookAppointmentForUser = async (user, payload) => {
         department,
         date,
         time,
+        urgencyLevel: urgencyData.urgencyLevel,
     });
 
-    return { success: true, message: 'Appointment booked successfully', appointment };
+    // ── Emit real-time Socket.IO events ──
+    try { emitAppointmentCreated(appointment); } catch (_e) { /* socket not ready */ }
+
+    // ── Critical alert for high/critical urgency ──
+    if (urgencyData.urgencyLevel === 'critical' || urgencyData.urgencyLevel === 'high') {
+        try { emitCriticalAlert(appointment, urgencyData); } catch (_e) { /* socket not ready */ }
+    }
+
+    return { success: true, message: 'Appointment booked successfully', appointment, urgency: urgencyData };
 };
 
 // POST /api/appointments — book a new appointment
@@ -151,6 +179,9 @@ const updateAppointment = async (req, res) => {
             status
         });
 
+        // ── Emit real-time update ──
+        try { emitAppointmentUpdated(appointment); } catch (_e) { /* socket not ready */ }
+
         res.json({ success: true, appointment });
     } catch (error) {
         res.status(500).json({ error: 'Server error', details: error.message });
@@ -178,6 +209,9 @@ const cancelAppointment = async (req, res) => {
         await logEvent(req.user.id || req.user._id, 'delete', 'Appointment', appointment._id, {
             type: 'APPOINTMENT_CANCELLED'
         });
+
+        // ── Emit real-time cancellation ──
+        try { emitAppointmentUpdated(appointment); } catch (_e) { /* socket not ready */ }
 
         res.json({ success: true, message: 'Appointment cancelled', appointment });
     } catch (error) {
@@ -219,7 +253,55 @@ module.exports = {
     updateAppointment,
     cancelAppointment,
     getDoctors,
+    getAISuggestion,
+    getPriorityQueue,
     // Helpers reused by AI assistant flows
     getAppointmentsForUser,
     bookAppointmentForUser,
 };
+
+// POST /api/appointments/suggest — Get AI-powered appointment suggestion
+async function getAISuggestion(req, res) {
+    try {
+        const { symptomDescription } = req.body;
+        if (!symptomDescription || symptomDescription.trim().length === 0) {
+            return res.status(400).json({ error: 'symptomDescription is required' });
+        }
+
+        const urgencyData = classifyUrgency(symptomDescription);
+        const suggestion = await generateAppointmentSuggestion(symptomDescription, urgencyData);
+
+        res.json({
+            success: true,
+            urgency: urgencyData,
+            suggestion,
+        });
+    } catch (error) {
+        console.error('[AI SUGGEST] Error:', error.message);
+        res.status(500).json({ error: 'Failed to generate suggestion', details: error.message });
+    }
+}
+
+// GET /api/appointments/priority-queue — Get appointments sorted by urgency (admin/doctor)
+async function getPriorityQueue(req, res) {
+    try {
+        if (global.useMockDB) {
+            const sorted = [...mockAppointments]
+                .filter(a => a.status !== 'cancelled' && a.status !== 'completed')
+                .sort((a, b) => (b.urgencyScore || 0) - (a.urgencyScore || 0));
+            return res.json(sorted);
+        }
+
+        const appointments = await Appointment.find({
+            status: { $nin: ['cancelled', 'completed'] }
+        })
+            .populate('patientId', 'firstName lastName email username')
+            .populate('doctorId', 'firstName lastName email username')
+            .sort({ urgencyScore: -1, date: 1 })
+            .limit(50);
+
+        res.json(appointments);
+    } catch (error) {
+        res.status(500).json({ error: 'Server error', details: error.message });
+    }
+}

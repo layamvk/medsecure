@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
     Users, MessageSquare, Clock, AlertTriangle, 
     Sparkles, Activity, Calendar, TrendingUp,
-    ArrowRight, Bell, Brain, Shield
+    ArrowRight, Bell, Brain, Shield, Zap, Stethoscope
 } from 'lucide-react';
 import api from '../api/axiosConfig';
+import { useRealTimeAppointments } from '../hooks/useSocket';
+import CriticalAlertBanner from '../components/CriticalAlertBanner';
 
 // Fallback data used when backend is unreachable
 const fallbackStats = {
@@ -31,6 +33,10 @@ export default function Dashboard() {
     const [stats, setStats] = useState(fallbackStats);
     const [activity, setActivity] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    // Real-time appointment tracking
+    const { appointments: realtimeAppointments, criticalAlerts, clearAlert } = useRealTimeAppointments([]);
+    const [liveAppointments, setLiveAppointments] = useState([]);
 
     useEffect(() => {
         const fetchDashboard = async () => {
@@ -76,6 +82,43 @@ export default function Dashboard() {
         fetchDashboard();
     }, []);
 
+    // Fetch initial appointments
+    useEffect(() => {
+        api.get('/appointments').then(res => {
+            setLiveAppointments(res.data || []);
+        }).catch(() => {});
+    }, []);
+
+    // Merge real-time appointments
+    useEffect(() => {
+        if (realtimeAppointments.length > 0) {
+            setLiveAppointments(prev => {
+                const merged = [...prev];
+                for (const rt of realtimeAppointments) {
+                    const idx = merged.findIndex(a => a._id === rt._id);
+                    if (idx >= 0) merged[idx] = { ...merged[idx], ...rt };
+                    else merged.unshift(rt);
+                }
+                return merged;
+            });
+        }
+    }, [realtimeAppointments]);
+
+    const upcomingAppointments = liveAppointments
+        .filter(a => a.status !== 'cancelled' && a.status !== 'completed')
+        .sort((a, b) => (b.urgencyScore || 0) - (a.urgencyScore || 0))
+        .slice(0, 5);
+
+    const getUrgencyColor = (level) => {
+        switch (level) {
+            case 'critical': return 'bg-red-500 text-white';
+            case 'high': return 'bg-orange-500 text-white';
+            case 'medium': return 'bg-yellow-500 text-white';
+            case 'low': return 'bg-green-500 text-white';
+            default: return 'bg-slate-400 text-white';
+        }
+    };
+
     const statCards = [
         { label: 'Total Patients', value: stats.totalPatients, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', trend: null },
         { label: 'Active Queries', value: stats.activeQueries, icon: MessageSquare, color: 'text-violet-600', bg: 'bg-violet-50', trend: null },
@@ -112,6 +155,9 @@ export default function Dashboard() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 py-8 px-6">
+            {/* Critical Alert Banner */}
+            <CriticalAlertBanner alerts={criticalAlerts} onDismiss={clearAlert} />
+
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <motion.div
@@ -281,6 +327,78 @@ export default function Dashboard() {
                         </div>
                     </motion.div>
                 </div>
+
+                {/* Live Appointments Panel */}
+                {upcomingAppointments.length > 0 && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.5 }}
+                        className="mt-8"
+                    >
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-lg font-bold text-slate-900">Live Appointments</h2>
+                                <span className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600">
+                                    <Zap className="w-3 h-3" />
+                                    Real-time
+                                </span>
+                            </div>
+                            <Link to="/appointments" className="text-sm font-medium text-blue-600 hover:text-blue-700">
+                                View All
+                            </Link>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <AnimatePresence>
+                                {upcomingAppointments.map((appt, idx) => (
+                                    <motion.div
+                                        key={appt._id}
+                                        layout
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.95 }}
+                                        transition={{ delay: idx * 0.05 }}
+                                        className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/40 p-4 shadow-lg"
+                                    >
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <Stethoscope className="w-4 h-4 text-blue-600" />
+                                                <span className="text-sm font-bold text-slate-900 truncate">{appt.doctorName || 'Unassigned'}</span>
+                                            </div>
+                                            {appt.urgencyLevel && (
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getUrgencyColor(appt.urgencyLevel)}`}>
+                                                    {appt.urgencyLevel.toUpperCase()}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="space-y-1 text-xs text-slate-500">
+                                            <p className="flex items-center gap-1.5">
+                                                <Calendar className="w-3 h-3" />
+                                                {appt.date ? new Date(appt.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A'}
+                                                {appt.time && ` at ${appt.time}`}
+                                            </p>
+                                            {appt.symptomDescription && (
+                                                <p className="text-xs text-slate-400 truncate">
+                                                    {appt.symptomDescription}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div className="mt-2">
+                                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg capitalize ${
+                                                appt.status === 'scheduled' ? 'bg-blue-50 text-blue-700' :
+                                                appt.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700' :
+                                                appt.status === 'pending' ? 'bg-amber-50 text-amber-700' :
+                                                'bg-slate-100 text-slate-600'
+                                            }`}>
+                                                {appt.status}
+                                            </span>
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </AnimatePresence>
+                        </div>
+                    </motion.div>
+                )}
             </div>
         </div>
     );

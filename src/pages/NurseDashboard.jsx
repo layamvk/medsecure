@@ -3,12 +3,17 @@ import Card from '../components/Card';
 import { Heart, Stethoscope, Users, Clock, FileText, AlertCircle, Activity } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axiosConfig';
+import { useRealTimeAppointments } from '../hooks/useSocket';
+import CriticalAlertBanner from '../components/CriticalAlertBanner';
 
 const NurseDashboard = () => {
     const { user } = useAuth();
     const [assignedPatients, setAssignedPatients] = useState([]);
     const [medications, setMedications] = useState([]);
     const [tasks, setTasks] = useState([]);
+
+    // Real-time critical alerts via Socket.IO
+    const { criticalAlerts, clearAlert } = useRealTimeAppointments([]);
 
     useEffect(() => {
         api.get('patients/assigned').then(res => setAssignedPatients(res.data || []));
@@ -205,8 +210,14 @@ const getStatusColor = (status) => {
 const NurseDashboard = () => {
     const { user } = useAuth();
 
+    // Real-time critical alerts via Socket.IO
+    const { criticalAlerts, clearAlert } = useRealTimeAppointments([]);
+
     return (
         <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            {/* Critical Alert Banner */}
+            <CriticalAlertBanner alerts={criticalAlerts} onDismiss={clearAlert} />
+
             <div className="flex items-end justify-between mb-4 border-b border-[var(--color-border)] pb-4">
                 <div>
                     <h1 className="text-2xl font-black tracking-tight text-[var(--color-text-primary)] uppercase">Nurse Station Central</h1>
