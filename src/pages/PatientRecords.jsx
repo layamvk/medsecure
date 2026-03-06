@@ -43,7 +43,7 @@ const PatientRecords = () => {
       <div className="flex items-end justify-between border-b border-[var(--color-border)] pb-4">
         <div>
           <h1 className="text-2xl font-black text-[var(--color-text-primary)] uppercase tracking-tight">My Health Records</h1>
-          <p className="text-[var(--color-text-secondary)] text-xs uppercase tracking-widest mt-1">{user.name} // Patient ID: PT-5731</p>
+          <p className="text-[var(--color-text-secondary)] text-xs uppercase tracking-widest mt-1">{user?.name || 'Patient'} // Patient ID: PT-5731</p>
         </div>
         <div className="flex items-center gap-3">
           <input

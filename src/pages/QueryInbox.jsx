@@ -6,7 +6,7 @@ function QueryInbox() {
 
     useEffect(() => {
         getQueries().then((res) => {
-            setQueries(res.data);
+            setQueries(res.data || []);
         }).catch(err => console.error("Failed to load queries:", err));
     }, []);
 

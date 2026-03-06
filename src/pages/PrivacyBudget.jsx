@@ -14,7 +14,7 @@ const PrivacyBudget = () => {
         <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="border-b border-[var(--color-border)] pb-4 mb-2">
                 <h1 className="text-2xl font-black tracking-tight text-[var(--color-text-primary)] uppercase">Quota Analysis Matrix</h1>
-                <p className="text-[10px] text-[var(--color-text-secondary)] font-bold uppercase tracking-widest mt-1">Personnel ID: {user.name.split(' ')[0]} // Monitor active data consumption trends.</p>
+                <p className="text-[10px] text-[var(--color-text-secondary)] font-bold uppercase tracking-widest mt-1">Personnel ID: {user?.name?.split(' ')[0] || 'User'} // Monitor active data consumption trends.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

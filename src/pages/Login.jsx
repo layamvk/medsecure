@@ -22,7 +22,14 @@ export default function Login() {
             const result = await login(email, password);
             navigate(result.dashboardPath || '/dashboard');
         } catch (err) {
-            const msg = err.response?.data?.error || err.message || 'Login failed. Please check your credentials.';
+            let msg;
+            if (err.response?.status === 429) {
+                msg = 'Too many login attempts. Please wait a few minutes and try again.';
+            } else if (err.code === 'ERR_NETWORK' || !err.response) {
+                msg = 'Cannot reach the server. Please ensure the backend is running on port 3001.';
+            } else {
+                msg = err.response?.data?.error || err.message || 'Login failed. Please check your credentials.';
+            }
             setError(msg);
         } finally {
             setLoading(false);

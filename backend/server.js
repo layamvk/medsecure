@@ -27,6 +27,7 @@ const xrayRoutes = require('./src/routes/xrayRoutes');
 const fileRoutes = require('./src/routes/fileRoutes');
 const appointmentRoutes = require('./src/routes/appointmentRoutes');
 const dashboardRoutes = require('./src/routes/dashboardRoutes');
+const adminAnalyticsRoutes = require('./src/routes/adminAnalyticsRoutes');
 const http = require('http');
 const { initSocket } = require('./src/config/socket');
 
@@ -63,7 +64,7 @@ const limiter = rateLimit({
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // limit each IP to 5 login requests per windowMs
+    max: process.env.NODE_ENV === 'production' ? 10 : 100, // generous in dev, strict in prod
     message: {
         error: 'Too many authentication attempts, please try again later.'
     }
@@ -129,6 +130,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/xray', xrayRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/admin-analytics', adminAnalyticsRoutes);
 app.use('/api', fileRoutes);
 
 // 404 handler

@@ -18,6 +18,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminAudit from './pages/AdminAudit';
 import AdminRisk from './pages/AdminRisk';
 import AdminSettings from './pages/AdminSettings';
+import AdminAnalyticsDashboard from './pages/AdminAnalyticsDashboard';
 
 // Doctor / Staff Pages
 import Patients from './pages/Patients';
@@ -63,6 +64,7 @@ function App() {
             <Route path="/admin/audit" element={<AdminAudit />} />
             <Route path="/admin/risk" element={<AdminRisk />} />
             <Route path="/admin/settings" element={<AdminSettings />} />
+            <Route path="/admin-dashboard" element={<AdminAnalyticsDashboard />} />
 
             {/* Doctor Routes */}
             <Route path="/doctor/patients" element={<Patients />} />

@@ -32,7 +32,7 @@ const PatientTransparency = () => {
       <div className="flex items-end justify-between mb-4 border-b border-[var(--color-border)] pb-4">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-[var(--color-text-primary)] uppercase">Access Transparency</h1>
-          <p className="text-[var(--color-text-secondary)] text-xs font-bold uppercase tracking-wider mt-1">Viewing history for {user.name} / Protected Health Data</p>
+          <p className="text-[var(--color-text-secondary)] text-xs font-bold uppercase tracking-wider mt-1">Viewing history for {user?.name || 'Patient'} / Protected Health Data</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[10px] font-bold text-[var(--color-text-secondary)] uppercase">Search:</span>

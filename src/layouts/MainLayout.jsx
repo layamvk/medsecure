@@ -11,6 +11,7 @@ import { useState } from 'react';
 const NAV_ITEMS = {
     Admin: [
         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+        { label: 'Analytics', path: '/admin-dashboard', icon: Activity },
         { label: 'User Management', path: '/admin/users', icon: Users },
         { label: 'Audit Logs', path: '/admin/audit', icon: FileText },
         { label: 'Risk Monitor', path: '/admin/risk', icon: Activity },

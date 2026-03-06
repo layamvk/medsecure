@@ -11,7 +11,7 @@ export default function QueryHistory() {
     useEffect(() => {
         getQueries()
             .then((res) => {
-                setQueries(res.data);
+                setQueries(res.data || []);
             })
             .catch((err) => {
                 console.error('Failed to load history:', err);

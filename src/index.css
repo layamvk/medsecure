@@ -1,41 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  /* Creative Software Hub Theme */
-  --color-primary: #0F0F1A;  /* Deep Base (Dark Navy/Charcoal) */
-  --color-secondary: rgba(255, 255, 255, 0.03); /* Translucent Panel BG for hover or secondary */
-  --color-card: rgba(255, 255, 255, 0.05); /* Glass Panel BG */
-  --color-border: rgba(255, 255, 255, 0.1); /* Glass Border (Edge Light) */
-  
-  --color-text-primary: #FFFFFF;
-  --color-text-secondary: rgba(255, 255, 255, 0.6); /* Soft Description Text */
+  /* MedSecure Light Theme – aligned with MainLayout's light gradient */
+  --color-primary: #f8fafc;          /* slate-50 (page background) */
+  --color-secondary: rgba(241, 245, 249, 0.8); /* slate-100 translucent (hover bg) */
+  --color-card: rgba(255, 255, 255, 0.75);     /* glass card bg */
+  --color-border: rgba(148, 163, 184, 0.3);    /* slate-400 light border */
+
+  --color-text-primary: #0f172a;    /* slate-900 – headings */
+  --color-text-secondary: rgba(71, 85, 105, 0.85); /* slate-600 – descriptions */
 
   /* Accent Colors */
-  --color-accent-blue: #3B82F6; /* Electric Blue (Buttons/Active) */
-  --color-accent-purple: #A855F7; /* Magenta/Violet Orbs */
-  --color-accent-success: #22C55E; /* Status Indicators */
-
-  /* Gradients */
-  --gradient-main: radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
-                   radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
-                   radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+  --color-accent-blue: #3B82F6;
+  --color-accent-purple: #A855F7;
+  --color-accent-cyan: #06B6D4;
+  --color-accent-success: #22C55E;
+  --color-accent-warning: #F59E0B;
+  --color-accent-red: #EF4444;
 
   /* Typography */
   --font-sans: "Inter", "SF Pro Display", system-ui, sans-serif;
-  --radius-xl: 1.25rem; /* 20px */
-  --radius-lg: 1rem; /* 16px */
-  --radius-md: 0.5rem; /* 8px */
+  --radius-xl: 1.25rem;
+  --radius-lg: 1rem;
+  --radius-md: 0.5rem;
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
   background-color: var(--color-primary);
-  background-image: var(--gradient-main);
-  background-attachment: fixed;
-  background-size: cover;
   color: var(--color-text-primary);
   margin: 0;
   min-height: 100vh;

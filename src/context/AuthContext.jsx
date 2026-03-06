@@ -32,11 +32,16 @@ const defaultUserInfo = (displayRole) => {
 
 export const AuthProvider = ({ children }) => {
     // `role` is the *currently viewed* role (admin can switch this to preview other dashboards)
-    const [role, setRole] = useState('Doctor');
-    // `isAdmin` tracks whether the authenticated user is actually an admin
-    const [isAdmin, setIsAdmin] = useState(false);
+    // Restore saved session data from localStorage
+    const savedRole = localStorage.getItem('authRole');
+    const savedUser = localStorage.getItem('authUser');
+    const savedIsAdmin = localStorage.getItem('authIsAdmin');
 
-    const [user, setUser] = useState(defaultUserInfo('Doctor'));
+    const [role, setRole] = useState(savedRole || 'Doctor');
+    // `isAdmin` tracks whether the authenticated user is actually an admin
+    const [isAdmin, setIsAdmin] = useState(savedIsAdmin === 'true');
+
+    const [user, setUser] = useState(savedUser ? JSON.parse(savedUser) : defaultUserInfo('Doctor'));
     const [privacyBudget, setPrivacyBudget] = useState({ current: 34, max: 50 });
 
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -52,8 +57,6 @@ export const AuthProvider = ({ children }) => {
             api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
             setAccessToken(token);
             setIsAuthenticated(true);
-            // Note: User info will be fetched on first API call or can be stored in localStorage
-            // For now, we just restore the authenticated state
         }
         setAuthChecked(true);
     }, []);
@@ -78,11 +81,16 @@ export const AuthProvider = ({ children }) => {
             setIsAdmin(adminFlag);
             const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ');
             const avatar = (userData.firstName?.[0] || '') + (userData.lastName?.[0] || '');
-            setUser({ 
+            const userInfo = { 
                 name: fullName || userData.username || displayRole, 
                 email: userData.email, 
                 avatar: avatar || displayRole[0] 
-            });
+            };
+            setUser(userInfo);
+            // Persist role/user to localStorage so page refresh retains session
+            localStorage.setItem('authRole', displayRole);
+            localStorage.setItem('authIsAdmin', String(adminFlag));
+            localStorage.setItem('authUser', JSON.stringify(userInfo));
         }
     };
 
@@ -136,6 +144,9 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(false);
         setAccessToken(null);
         localStorage.removeItem('authToken');
+        localStorage.removeItem('authRole');
+        localStorage.removeItem('authIsAdmin');
+        localStorage.removeItem('authUser');
         setUser(null);
         setIsAdmin(false);
         setRole('Doctor');
