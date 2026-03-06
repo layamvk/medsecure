@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
     ShieldPlus, LayoutDashboard, Users, FileText,
-    Activity, Settings, Eye, Clock, Calendar, MessageSquare, Sparkles,
+    Activity, Settings, Eye, Clock, Calendar, MessageSquare, Sparkles, ScanLine,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -18,6 +18,7 @@ const NAV_ITEMS = {
         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
         { label: 'Query Triage', path: '/staff/queries', icon: MessageSquare },
         { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles },
+        { label: 'X-Ray Analysis', path: '/xray-analysis', icon: ScanLine },
         { label: 'My Patients', path: '/doctor/patients', icon: Users },
         { label: 'Appointments', path: '/appointments', icon: Calendar },
         { label: 'Privacy Budget', path: '/doctor/privacy', icon: Eye },
@@ -27,6 +28,7 @@ const NAV_ITEMS = {
         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
         { label: 'Query Triage', path: '/staff/queries', icon: MessageSquare },
         { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles },
+        { label: 'X-Ray Analysis', path: '/xray-analysis', icon: ScanLine },
         { label: 'Assigned Patients', path: '/nurse/patients', icon: Users },
         { label: 'Appointments', path: '/appointments', icon: Calendar },
         { label: 'Privacy Budget', path: '/nurse/privacy', icon: Eye },
@@ -41,6 +43,7 @@ const NAV_ITEMS = {
         { label: 'My Records', path: '/patient/records', icon: FileText },
         { label: 'Privacy & Transparency', path: '/patient/transparency', icon: ShieldPlus },
         { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles },
+        { label: 'X-Ray Analysis', path: '/xray-analysis', icon: ScanLine },
         { label: 'Appointments', path: '/appointments', icon: Calendar },
     ],
     // Default staff navigation for users without specific role

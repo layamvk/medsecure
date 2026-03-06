@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import {
     ShieldPlus, LayoutDashboard, Users, FileText,
     Activity, Settings, Eye, Clock, Calendar, MessageSquare, Sparkles,
-    LogOut, Menu, X, Bell, ChevronRight
+    LogOut, Menu, X, Bell, ChevronRight, ScanLine
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -20,6 +20,7 @@ const NAV_ITEMS = {
         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
         { label: 'Query Triage', path: '/staff/queries', icon: MessageSquare },
         { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles },
+        { label: 'X-Ray Analysis', path: '/xray-analysis', icon: ScanLine },
         { label: 'Appointments', path: '/appointments', icon: Calendar },
         { label: 'My Patients', path: '/doctor/patients', icon: Users },
     ],
@@ -27,6 +28,7 @@ const NAV_ITEMS = {
         { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
         { label: 'Query Triage', path: '/staff/queries', icon: MessageSquare },
         { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles },
+        { label: 'X-Ray Analysis', path: '/xray-analysis', icon: ScanLine },
         { label: 'Appointments', path: '/appointments', icon: Calendar },
         { label: 'Patients', path: '/nurse/patients', icon: Users },
     ],
@@ -40,6 +42,7 @@ const NAV_ITEMS = {
         { label: 'Submit Query', path: '/patient/new-query', icon: FileText },
         { label: 'My Queries', path: '/patient/queries', icon: MessageSquare },
         { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles },
+        { label: 'X-Ray Analysis', path: '/xray-analysis', icon: ScanLine },
         { label: 'Appointments', path: '/appointments', icon: Calendar },
         { label: 'Transparency', path: '/patient/transparency', icon: ShieldPlus },
     ],

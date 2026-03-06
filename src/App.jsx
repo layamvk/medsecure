@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import QueryInbox from './pages/QueryInbox';
 import AIAssistant from './pages/AIAssistant';
 import AppointmentBooking from './pages/AppointmentBooking';
+import XRayAnalysis from './pages/XRayAnalysis';
 
 // Deep Patient UI Protocol Routes
 import NewQuery from './pages/patient/NewQuery';
@@ -37,6 +38,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/queries" element={<QueryInbox />} />
             <Route path="/ai-assistant" element={<AIAssistant />} />
+            <Route path="/xray-analysis" element={<XRayAnalysis />} />
             <Route path="/appointments" element={<AppointmentBooking />} />
 
             {/* Phase 3 - Patient Interface Routes */}

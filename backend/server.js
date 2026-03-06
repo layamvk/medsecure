@@ -23,6 +23,7 @@ const securityRoutes = require('./src/routes/security');
 const privacyRoutes = require('./src/routes/privacy');
 const queryRoutes = require('./src/routes/queryRoutes');
 const aiRoutes = require('./src/routes/aiRoutes');
+const xrayRoutes = require('./src/routes/xrayRoutes');
 const fileRoutes = require('./src/routes/fileRoutes');
 const appointmentRoutes = require('./src/routes/appointmentRoutes');
 const dashboardRoutes = require('./src/routes/dashboardRoutes');
@@ -88,8 +89,8 @@ app.use(cors({
 }));
 
 // Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use(cookieParser());
 
 // Data sanitization
@@ -125,6 +126,7 @@ app.use('/api/security', securityRoutes);
 app.use('/api/privacy', privacyRoutes);
 app.use('/api/queries', queryRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/xray', xrayRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api', fileRoutes);
